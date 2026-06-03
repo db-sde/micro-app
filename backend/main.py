@@ -649,6 +649,32 @@ async def upload_image(
     }
 
 
+# ────────────────────────── parse debug endpoint ──────────────────────────
+
+
+@app.post("/parse")
+async def parse_only(file: UploadFile = File(...)):
+    """Upload a single .docx file and return only the parsed section map (no database save, no LLM calls)."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided.")
+
+    if not file.filename.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .docx files are supported. Received: " + file.filename,
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        section_map = parse_docx(file_bytes)
+        return section_map
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Parsing error: {exc}")
+
+
 # ────────────────────────── health check ──────────────────────────
 
 
