@@ -165,6 +165,12 @@ def _is_heading(para) -> bool:
     if max_pt >= 14:
         return True
 
+    # 3. Fallback: all bold (confirmed above) + short text + no explicit font size.
+    #    Catches headings where font size is inherited from the Word style rather
+    #    than set directly on the run — common with template-based documents.
+    if max_pt == 0.0 and len(para.text.strip()) < 100:
+        return True
+
     return False
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from schemas import REQUIRED_BY_TYPE
+from schemas import REQUIRED_BY_TYPE, FIELD_TYPES_BY_TYPE
 
 
 def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
@@ -30,6 +30,7 @@ def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
         ``{"summary": {…}, "field_report": [{…}, …]}``
     """
     required_fields = REQUIRED_BY_TYPE.get(page_type, [])
+    field_types = FIELD_TYPES_BY_TYPE.get(page_type, {})
     total_required = len(required_fields)
 
     mapped = 0
@@ -39,11 +40,12 @@ def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
 
     for field_key in required_fields:
         value = payload.get(field_key)
+        ft = field_types.get(field_key, "wysiwyg")
 
         if value is None or field_key not in payload:
             status = "missing"
             missing += 1
-        elif _is_thin(value):
+        elif _is_thin(value, ft):
             status = "thin"
             thin += 1
         else:
@@ -81,9 +83,19 @@ def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
 # ────────────────────────── helpers ──────────────────────────
 
 
-def _is_thin(value: Any) -> bool:
-    """Return True if *value* exists but is too small to be useful."""
+def _is_thin(value: Any, field_type: str = "wysiwyg") -> bool:
+    """Return True if *value* exists but is too small to be useful.
+
+    Thresholds are field-type aware:
+
+    * **text / stat**: minimum 3 characters (short values are expected)
+    * **wysiwyg**:     minimum 80 characters (rich content expected)
+    * **bullet**:      minimum 2 items
+    * **table / faq**:  minimum 1 row / item
+    """
     if isinstance(value, str):
+        if field_type in ("text", "stat"):
+            return len(value.strip()) < 3
         return len(value.strip()) < 80
     if isinstance(value, list):
         return len(value) < 2
@@ -91,7 +103,7 @@ def _is_thin(value: Any) -> bool:
         # A dict with only a "value" key whose content is thin
         inner = value.get("value")
         if inner is not None:
-            return _is_thin(inner)
+            return _is_thin(inner, field_type)
         return False
     # Numbers, booleans, etc. — not thin
     return False
