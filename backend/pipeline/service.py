@@ -72,7 +72,9 @@ def run_extraction_pipeline(
     t0 = time.time()
 
     # ── Step 1: Parse DOCX ──
-    section_map = parse_docx(file_bytes)
+    parser_output = parse_docx(file_bytes)
+    # Support both old schema and new schema (which wraps in "sections")
+    section_map = parser_output.get("sections", parser_output) if isinstance(parser_output, dict) else parser_output
     section_headings = [k for k in section_map if not k.startswith("__")]
     logger.info(
         "PARSED %d sections from %s: %s",

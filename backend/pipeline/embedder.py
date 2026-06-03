@@ -166,9 +166,15 @@ def match_headings_to_fields(
 
     field_idx = _field_index[page_type]
 
+    # Support new parser structure where sections are inside "sections" key
+    if "sections" in section_map and "__meta__" in section_map:
+        sections_dict = section_map["sections"]
+    else:
+        sections_dict = section_map
+
     # Collect headings to embed (skip internal keys)
     headings: list[str] = [
-        h for h in section_map.keys() if not h.startswith("__")
+        h for h in sections_dict.keys() if not h.startswith("__")
     ]
     if not headings:
         print("No headings found in document — skipping embedding.")
@@ -190,12 +196,15 @@ def match_headings_to_fields(
         scored.sort(key=lambda x: x["score"], reverse=True)
         top3 = scored[:3]
 
-        section_data = section_map[heading]
+        section_data = sections_dict[heading]
+        # Handle both old schema ("type") and new schema ("content_type")
+        content_type = section_data.get("content_type") or section_data.get("type", "unknown")
+
         results.append(
             {
                 "heading": heading,
-                "section_type": section_data["type"],
-                "content": section_data["content"],
+                "section_type": content_type,
+                "content": section_data.get("content", section_data),
                 "matches": top3,
                 "best_field": top3[0]["field_key"] if top3 else "",
                 "best_score": top3[0]["score"] if top3 else 0.0,
