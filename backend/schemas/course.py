@@ -29,22 +29,72 @@ class CourseSchema(BaseModel):
 # ── Embedding descriptions per field ──
 
 COURSE_FIELDS: dict[str, str] = {
-    "course_name": "name of the course program title",
-    "course_about": "about the course overview introduction program description what is this course",
-    "course_accreditations": "accreditations approvals rankings recognitions",
-    "eligibility": "eligibility criteria admission requirements qualification needed who can apply",
-    "course_facts": "course facts key facts highlights program highlights quick facts",
-    "admission_process": "admission process how to apply enrollment steps",
-    "specializations": "specializations offered specialization options available tracks",
-    "specialization_fees": "specialization wise fees cost per specialization fee table",
-    "fee_structure": "fee structure semester fee total cost payment plan course fee",
-    "syllabus": "syllabus curriculum subjects semester wise course structure year wise topics",
-    "placement_partners": "placement partners hiring partners recruiters career services",
-    "job_roles": "job roles salary career opportunities positions after course",
-    "faqs": "frequently asked questions common queries",
-    "duration": "course duration program length years months",
-    "total_fee": "total fee complete course cost full amount",
-    "emi_amount": "EMI monthly installment amount per month",
+    "course_name": (
+        "name of the course program title degree qualification"
+    ),
+    "course_about": (
+        "about the course overview introduction program description what is this course "
+        "program summary background course details main content course information body"
+    ),
+    "course_accreditations": (
+        "accreditations approvals rankings recognitions course approvals "
+        "NAAC UGC AICTE certified grade regulatory bodies course certifications affiliations"
+    ),
+    "eligibility": (
+        "eligibility criteria admission requirements qualification needed who can apply "
+        "minimum qualification entry requirements graduation marks required prerequisites "
+        "academic requirements educational qualification"
+    ),
+    "course_facts": (
+        "course facts key facts highlights program highlights quick facts at a glance "
+        "important statistics course statistics badge facts key information overview points"
+    ),
+    "admission_process": (
+        "admission process how to apply enrollment steps registration procedure "
+        "application guide join steps entry process sign up application steps"
+    ),
+    "specializations": (
+        "specializations offered specialization options available tracks streams "
+        "electives branches available specializations choose a specialization domains"
+    ),
+    "specialization_fees": (
+        "specialization wise fees cost per specialization fee table specialization pricing "
+        "fee by specialization track wise fees branch fees specialization fee structure"
+    ),
+    "fee_structure": (
+        "fee structure semester fee total cost payment plan course fee annual fee "
+        "tuition fee program cost full fee fee breakdown fee details fee schedule"
+    ),
+    "syllabus": (
+        "syllabus curriculum subjects semester wise course structure year wise topics "
+        "academic plan study plan modules units course content semester topics subjects list"
+    ),
+    "placement_partners": (
+        "placement partners hiring partners recruiters career services top recruiters "
+        "recruiting companies employer network MNC partners industry partners placements "
+        "campus recruitment companies hiring organizations"
+    ),
+    "job_roles": (
+        "job roles salary career opportunities positions after course job profiles "
+        "career paths career scope employment roles designation salaries average salary "
+        "career options post graduation jobs"
+    ),
+    "faqs": (
+        "frequently asked questions FAQs common queries questions and answers "
+        "common doubts student queries Q and A help section people also ask"
+    ),
+    "duration": (
+        "course duration program length years months time to complete "
+        "how long is the course program duration years of study"
+    ),
+    "total_fee": (
+        "total fee complete course cost full amount total course fee "
+        "program total fee total tuition complete payment aggregate fee"
+    ),
+    "emi_amount": (
+        "EMI monthly installment amount per month monthly payment easy EMI "
+        "no cost EMI installment plan monthly fee deferred payment amount"
+    ),
 }
 
 

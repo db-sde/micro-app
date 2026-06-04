@@ -1,8 +1,8 @@
 """
 AI content extractor — uses Anthropic Claude claude-haiku-4-5-20251001 to:
   1. Extract and format section content for specific ACF field types
-  2. Confirm ambiguous heading → field mappings (score 0.72 – 0.87)
-  3. Resolve highly ambiguous mappings (score 0.55 – 0.71) with candidate list
+  2. Confirm ambiguous heading → field mappings (medium confidence range)
+  3. Resolve highly ambiguous mappings (low confidence range) with candidate list
 
 Every function returns a plain Python dict that can be serialised to JSON.
 """
@@ -44,11 +44,34 @@ _MODEL = "claude-haiku-4-5-20251001"
 
 # ────────────────────────── system prompt ──────────────────────────
 
-SYSTEM_PROMPT = (
-    "You are extracting content from a Word document section and formatting "
-    "it for a WordPress ACF field. Return ONLY valid JSON. No explanation. "
-    "No markdown. No preamble. Exact format specified per field type."
-)
+SYSTEM_PROMPT = """\
+You are a content extraction specialist for an education listing platform.
+You receive raw content from Word document sections and format it for WordPress ACF fields.
+
+FIELD TYPE RULES — follow exactly:
+- text:       Plain string. No HTML. No markdown. Max 1–2 sentences for heading fields.
+- wysiwyg:    Clean HTML using ONLY <p> <ul> <ol> <li> <strong> <em> <h3> <h4> tags. No div, span, br.
+- stat:       Short badge value like "85,000+" or "24 Months" or "A+". Max 10 characters total.
+- table:      Valid JSON array of objects. ALWAYS an array. NEVER a flat string.
+- bullet:     JSON array of strings. Each string is one bullet item.
+- faq:        JSON array of {"question": "...", "answer": "..."} objects.
+
+STAT EXTRACTION: For stat fields, extract just the number+unit.
+  Examples: "85,000+" not "The university has 85,000+ students"
+            "A+" not "NAAC Grade A+"
+            "24 Months" not "The program duration is 24 months"
+
+FAQ DETECTION: If content has alternating bullet points (odd=question, even=answer),
+treat them as FAQ pairs. Extract as [{"question": "...", "answer": "..."}].
+
+MISSING CONTENT: If the section content is empty or clearly unrelated to the field,
+return {"value": null}.
+
+RETURN FORMAT — always return valid JSON, nothing else:
+{"value": <extracted value>}
+
+No preamble. No explanation. No markdown fences. Raw JSON only.
+"""
 
 # ────────────────────────── stat question map ──────────────────────────
 
@@ -63,6 +86,50 @@ STAT_QUESTIONS: dict[str, str] = {
     "emi_amount": "What is the monthly EMI amount?",
     "spec_total_fee": "What is the total specialization fee?",
     "spec_emi": "What is the monthly EMI for this specialization?",
+}
+
+# ────────────────────────── field extraction hints ──────────────────────────
+
+# Field-specific extraction instructions prepended to the content.
+# The LLM sees these regardless of which extraction function is called.
+FIELD_EXTRACTION_HINTS: dict[str, str] = {
+    "placement_partners": (
+        "IMPORTANT: Extract ONLY company/organisation names. "
+        "Look for proper nouns — names like Amazon, TCS, Infosys, DishTV, CMC Limited. "
+        "IGNORE support services text like 'resume building', 'interview prep', 'career guidance'. "
+        "Return a JSON array of strings: each string is one company name."
+    ),
+    "specializations": (
+        "IMPORTANT: Extract the list of specialization/track names. "
+        "These are proper noun phrases like 'Marketing', 'Finance', 'Human Resource Management', "
+        "'Healthcare and Hospital Administration'. "
+        "Return a JSON array of strings: each string is one specialization name."
+    ),
+    "course_facts": (
+        "Extract key facts or highlights about the course. "
+        "Each fact should be a complete, meaningful sentence or bullet point. "
+        "Return a JSON array of strings."
+    ),
+    "faqs": (
+        "Extract question-answer pairs from the content. "
+        "Content may have alternating bullets (odd = question, even = answer), "
+        "or explicit Q:/A: labels, or paragraph-style Q&A. "
+        "Return a JSON array of {\"question\": \"...\", \"answer\": \"...\"} objects."
+    ),
+    "reviews": (
+        "Extract individual student reviews or testimonials as separate items. "
+        "Each paragraph is typically one review. "
+        "Return a JSON array of strings, each string is one review."
+    ),
+    "job_roles": (
+        "Extract job role names and associated salary information. "
+        "Each row should be one job role with its average salary if available. "
+        "Return a JSON array of objects."
+    ),
+    "spec_about": (
+        "Extract a comprehensive overview/description of the specialization. "
+        "Format as clean HTML paragraphs."
+    ),
 }
 
 # ────────────────────────── helpers ──────────────────────────
@@ -195,7 +262,16 @@ def extract_field(
     text_block = _content_to_text(content)
 
     if not text_block.strip():
-        return {"value": None, "reason": "empty_content"}
+        return {
+            "value": None,
+            "reason": "empty_content",
+            "flag": "Section heading found but content is empty or whitespace-only",
+        }
+
+    # Prepend field-specific extraction hint if available
+    hint = FIELD_EXTRACTION_HINTS.get(field_key, "")
+    if hint:
+        text_block = hint + "\n\n" + text_block
 
     if field_type == "text":
         return _extract_text(field_key, text_block)
@@ -337,7 +413,7 @@ def confirm_mapping(
 ) -> dict[str, Any]:
     """Ask Claude whether *heading* genuinely maps to *candidate_field*.
 
-    Used for similarity scores in the 0.72 – 0.87 range where the embedding
+    Used for similarity scores in the THRESHOLD_VERIFY – THRESHOLD_AUTO range where the embedding
     match is probable but not certain.
 
     Returns ``{"confirmed": bool, "field_key": str, "reason": str}``.
@@ -378,7 +454,7 @@ def resolve_ambiguous(
 ) -> dict[str, Any]:
     """Ask Claude to pick the best field from multiple candidates.
 
-    Used for similarity scores in the 0.55 – 0.71 range where the embedding
+    Used for similarity scores in the THRESHOLD_FALLBACK – THRESHOLD_VERIFY range where the embedding
     is unsure which field is correct.
 
     Parameters

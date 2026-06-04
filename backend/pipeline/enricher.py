@@ -160,12 +160,105 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
 # ────────────────────────── public API ──────────────────────────
 
 
+def _enrich_course_name(
+    payload: dict[str, Any],
+    section_map: dict[str, dict[str, Any]],
+    filename: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Fill course_name / spec_name / university_name from filename or first heading.
+
+    Runs only when the field is still None after main extraction.
+    No API calls — pure regex + heuristic.
+    """
+    import re as _re
+    from pipeline.docx_parser import strip_university_prefix
+
+    for field_key in ("course_name", "spec_name", "university_name"):
+        if payload.get(field_key) is not None:
+            continue
+
+        # Source 1: filename
+        name = _re.sub(r"\.docx$", "", filename, flags=_re.IGNORECASE)
+        name = _re.sub(r"^copy[\s_]+of[\s_]+", "", name, flags=_re.IGNORECASE)
+        name = strip_university_prefix(name)
+        name = _re.sub(
+            r"\b(program|course|page|doc|document|file)\b", "", name,
+            flags=_re.IGNORECASE,
+        ).strip(" -_")
+        if name and len(name) > 3:
+            payload[field_key] = name
+            enrichment_log.append({
+                "field_key": field_key,
+                "status": "enriched",
+                "source": f"filename:{filename}",
+            })
+            logger.info("ENRICHED: %s = %r (source=filename)", field_key, name)
+            continue
+
+        # Source 2: first real section heading
+        for heading, section in section_map.items():
+            if heading.startswith("__"):
+                continue
+            original_heading = section.get("heading_original", heading)
+            stripped = strip_university_prefix(original_heading)
+            stripped = _re.sub(r"^about\s+", "", stripped, flags=_re.IGNORECASE).strip()
+            if stripped and len(stripped) > 3:
+                payload[field_key] = stripped
+                enrichment_log.append({
+                    "field_key": field_key,
+                    "status": "enriched",
+                    "source": f"first_heading:{heading}",
+                })
+                logger.info(
+                    "ENRICHED: %s = %r (source=first_heading)", field_key, stripped
+                )
+            break   # only try first section
+
+
+def _fill_specializations_from_fees(
+    payload: dict[str, Any],
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """If specializations is None but specialization_fees has data, derive names."""
+    if payload.get("specializations") is not None:
+        return
+
+    fee_data = payload.get("specialization_fees") or []
+    if not isinstance(fee_data, list) or not fee_data:
+        return
+
+    names: list[str] = []
+    for row in fee_data:
+        if not isinstance(row, dict):
+            continue
+        # Try common column names for the specialization name
+        for col in ("specialization", "name", "specialization_name",
+                    "program", "course", "track"):
+            val = row.get(col)
+            if val and isinstance(val, str) and len(val.strip()) > 2:
+                names.append(val.strip())
+                break
+
+    if names:
+        payload["specializations"] = names
+        enrichment_log.append({
+            "field_key": "specializations",
+            "status": "enriched",
+            "source": "specialization_fees_table",
+        })
+        logger.info(
+            "ENRICHED: specializations = %r (source=fee_table)", names
+        )
+
+
 def enrich_payload(
     payload: dict[str, Any],
     section_map: dict[str, dict[str, Any]],
     page_type: str,
+    filename: str = "",
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
-    """Post-process the payload to fill missing stat fields via regex.
+    """Post-process the payload to fill missing fields via regex/heuristics.
 
     Scans already-extracted payload values and raw section content using
     deterministic regex patterns.  **No API calls.**
@@ -178,6 +271,8 @@ def enrich_payload(
         Original section map from ``parse_docx``.
     page_type : str
         One of ``"university"``, ``"course"``, ``"specialization"``.
+    filename : str
+        Original filename — used to extract course_name as a fallback.
 
     Returns
     -------
@@ -185,11 +280,8 @@ def enrich_payload(
         ``(enriched_payload, enrichment_log)`` where each log entry
         has ``field_key``, ``status``, and ``source``.
     """
-    rules = _ENRICHMENT_MAP.get(page_type, {})
-    if not rules:
-        return payload, []
-
     enrichment_log: list[dict[str, str]] = []
+    rules = _ENRICHMENT_MAP.get(page_type, {})
 
     for target_field, rule in rules.items():
         # Skip if field already has a non-None value
@@ -267,6 +359,10 @@ def enrich_payload(
             logger.info(
                 "ENRICHMENT_MISS: %s — not found in any source", target_field
             )
+
+    # ── Additional enrichment rules (non-stat) ──
+    _enrich_course_name(payload, section_map, filename, enrichment_log)
+    _fill_specializations_from_fees(payload, enrichment_log)
 
     return payload, enrichment_log
 

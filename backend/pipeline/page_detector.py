@@ -36,7 +36,9 @@ _SPECIALIZATION_SIGNALS: list[str] = [
     "specialization fee",
     "emi details",
     "about the specialization",
-    "finance management",
+    "specialization highlights",
+    "specialization facts",
+    "about specialization",
 ]
 
 

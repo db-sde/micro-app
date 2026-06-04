@@ -36,6 +36,67 @@ from schemas import FIELD_TYPES_BY_TYPE
 
 logger = logging.getLogger("degreebaba.pipeline")
 
+# ────────────────────────── confidence thresholds ──────────────────────────
+
+THRESHOLD_AUTO = 0.78      # Auto-accept — no LLM confirmation needed
+THRESHOLD_VERIFY = 0.60    # Send to LLM for confirmation
+THRESHOLD_FALLBACK = 0.42  # Send to LLM with all 3 candidates
+# Below THRESHOLD_FALLBACK → flag as UNMAPPED / skip
+
+# ────────────────────────── critical field thresholds ──────────────────────────
+
+# Critical patterns: heading substrings that must never be silently dropped.
+# These fields are too important to miss; they get a lower drop threshold so
+# they are always sent to the LLM resolution path.
+_CRITICAL_THRESHOLD_MAP: dict[str, float] = {
+    "faq":           0.20,
+    "review":        0.20,
+    "syllabus":      0.25,
+    "curriculum":    0.25,
+    "admission":     0.28,
+    "eligibility":   0.28,
+    "fee":           0.28,
+    "placement":     0.28,
+    "about":         0.28,
+    "fact":          0.30,
+    "highlight":     0.30,
+    "accreditation": 0.30,
+}
+
+
+def get_effective_threshold(stripped_heading: str) -> float:
+    """Return the drop threshold for a given (already-stripped) heading.
+
+    Critical patterns get a much lower threshold so they are always sent
+    to the LLM resolution path rather than silently dropped.
+    """
+    lower = stripped_heading.lower()
+    for pattern, threshold in _CRITICAL_THRESHOLD_MAP.items():
+        if pattern in lower:
+            return threshold
+    return THRESHOLD_FALLBACK
+
+
+# ────────────────────────── length correction ──────────────────────────
+
+
+def apply_length_correction(score: float, heading: str) -> float:
+    """Boost cosine similarity for longer headings.
+
+    Cosine similarity naturally drops for longer text embeddings.
+    A 6-word heading that clearly maps to a field should not be penalised.
+    This correction boosts scores proportionally to heading length.
+    """
+    word_count = len(heading.split())
+    if word_count <= 3:
+        return score               # no correction needed
+    elif word_count <= 5:
+        return min(score * 1.05, 1.0)   # +5% boost
+    elif word_count <= 8:
+        return min(score * 1.12, 1.0)   # +12% boost
+    else:
+        return min(score * 1.18, 1.0)   # +18% boost for very long headings
+
 
 # ────────────────────────── public API ──────────────────────────
 
@@ -105,7 +166,7 @@ def run_extraction_pipeline(
     payload, mapping_records = _extract_assignments(assignments, field_types)
 
     # ── Step 5: Enrich payload (regex, zero API calls) ──
-    payload, enrichment_log = enrich_payload(payload, section_map, detected_type)
+    payload, enrichment_log = enrich_payload(payload, section_map, detected_type, filename=filename)
 
     # Record enrichment results as mapping entries
     for entry in enrichment_log:
@@ -212,11 +273,20 @@ def _route_headings(
     assignments: dict[str, dict[str, Any]] = {}
 
     for match in matches:
-        best_score: float = match["best_score"]
-        best_field: str = match["best_field"]
+        raw_best_score: float = match["best_score"]
         heading: str = match["heading"]
         content: Any = match["content"]
         candidates: list[dict[str, Any]] = match["matches"]
+
+        # Apply length correction to all candidate scores
+        corrected_candidates = []
+        for c in candidates:
+            corrected = apply_length_correction(c["score"], heading)
+            corrected_candidates.append({**c, "score": corrected})
+        corrected_candidates.sort(key=lambda x: x["score"], reverse=True)
+
+        best_score = corrected_candidates[0]["score"] if corrected_candidates else 0.0
+        best_field: str = corrected_candidates[0]["field_key"] if corrected_candidates else ""
 
         chosen_field: str | None = None
         source = "embedding"
@@ -224,15 +294,15 @@ def _route_headings(
 
         # ── Score routing ──
 
-        if best_score >= 0.88:
-            # High confidence — accept directly
+        if best_score >= THRESHOLD_AUTO:
+            # High confidence — accept directly, no LLM needed
             chosen_field = best_field
             logger.info(
                 "AUTO_ACCEPT: heading=%r → %s (score=%.4f)",
                 heading, best_field, best_score,
             )
 
-        elif best_score >= 0.72:
+        elif best_score >= THRESHOLD_VERIFY:
             # Medium confidence — confirm with AI
             try:
                 confirmation = confirm_mapping(
@@ -246,11 +316,10 @@ def _route_headings(
                         heading, best_field, best_score,
                     )
                 else:
-                    # Rejection fallback: try next candidates
-                    # deterministically (no additional API call)
-                    for candidate in candidates[1:]:
+                    # Rejection fallback: try next candidates deterministically
+                    for candidate in corrected_candidates[1:]:
                         cand_score = candidate["score"]
-                        if cand_score >= 0.72:
+                        if cand_score >= THRESHOLD_VERIFY:
                             chosen_field = candidate["field_key"]
                             confidence = cand_score
                             source = "embedding_fallback"
@@ -264,8 +333,8 @@ def _route_headings(
                     if chosen_field is None:
                         logger.info(
                             "REJECTED: heading=%r — best=%s rejected, "
-                            "no fallback candidates ≥ 0.72",
-                            heading, best_field,
+                            "no fallback candidates ≥ %.2f",
+                            heading, best_field, THRESHOLD_VERIFY,
                         )
             except Exception as exc:
                 logger.warning(
@@ -273,11 +342,11 @@ def _route_headings(
                 )
                 chosen_field = best_field  # fallback on API error
 
-        elif best_score >= 0.55:
-            # Low confidence — resolve with AI
+        elif best_score >= THRESHOLD_FALLBACK or best_score >= get_effective_threshold(heading):
+            # Low confidence — resolve with AI using all candidates
             try:
                 resolution = resolve_ambiguous(
-                    heading, content, candidates, detected_type
+                    heading, content, corrected_candidates, detected_type
                 )
                 chosen_field = resolution.get("field_key")
                 confidence = resolution.get("confidence", 0.0)
@@ -297,10 +366,11 @@ def _route_headings(
                 )
 
         else:
-            # Below 0.55 — skip
+            # Below all thresholds — skip
+            eff_thresh = get_effective_threshold(heading)
             logger.info(
-                "DROPPED: heading=%r best=%s score=%.4f (below 0.55)",
-                heading, best_field, best_score,
+                "DROPPED: heading=%r best=%s score=%.4f (below %.2f)",
+                heading, best_field, best_score, eff_thresh,
             )
 
         # ── Duplicate resolution ──

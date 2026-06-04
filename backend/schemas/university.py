@@ -30,23 +30,75 @@ class UniversitySchema(BaseModel):
 # ── Embedding descriptions per field (used by the embedder to build the vector index) ──
 
 UNIVERSITY_FIELDS: dict[str, str] = {
-    "university_name": "name of the university full title",
-    "about_content": "about university history overview background introduction who we are legacy heritage establishment",
-    "key_highlights": "key highlights facts quick facts university facts at a glance key numbers achievements",
-    "accreditations": "accreditations approvals recognitions certifications rankings affiliations",
-    "stat_students": "total students enrolled learner count student strength number of learners",
-    "stat_alumni": "alumni count total alumni network former students graduates",
-    "stat_hiring_partners": "hiring partners recruiters placement companies MNC partners",
-    "stat_years": "years of excellence experience established legacy years of operation",
-    "stat_programs": "total programs courses offered number of programs",
-    "admission_process": "admission process how to apply enrollment steps registration",
-    "emi_details": "EMI fee payment installments monthly payment financial aid scholarships loan facility banking partners",
-    "courses_table": "courses programs offered university courses table list of programs",
-    "faculty_table": "faculty members professors instructors teaching staff academic team",
-    "placement_content": "placement hiring partners career services job placement recruitment",
-    "faqs": "frequently asked questions FAQs common queries questions and answers",
-    "reviews": "reviews testimonials student feedback student experiences",
-    "pros_content": "pros advantages benefits why choose reasons to choose",
+    "university_name": (
+        "name of the university full title institution college"
+    ),
+    "about_content": (
+        "about university history overview background introduction who we are "
+        "legacy heritage establishment story mission vision main content body description"
+    ),
+    "key_highlights": (
+        "key highlights facts quick facts university facts at a glance key numbers "
+        "achievements notable points important statistics badge features at a glance"
+    ),
+    "accreditations": (
+        "accreditations approvals recognitions certifications rankings affiliations "
+        "NAAC UGC AICTE approved grade accredited certifications regulatory bodies"
+    ),
+    "stat_students": (
+        "total students enrolled learner count student strength number of learners "
+        "student base active students community size registered students"
+    ),
+    "stat_alumni": (
+        "alumni count total alumni network former students graduates alumni base "
+        "alumni community past students successful alumni number of graduates"
+    ),
+    "stat_hiring_partners": (
+        "hiring partners recruiters placement companies MNC partners corporate tie-ups "
+        "number of recruiters industry partners employer network recruitment companies"
+    ),
+    "stat_years": (
+        "years of excellence experience established legacy years of operation age "
+        "founded since establishment year decades of experience years serving"
+    ),
+    "stat_programs": (
+        "total programs courses offered number of programs count of courses "
+        "programs available program catalog total offerings academic programs"
+    ),
+    "admission_process": (
+        "admission process how to apply enrollment steps registration procedure "
+        "application steps join now entry process sign up admission guide"
+    ),
+    "emi_details": (
+        "EMI fee payment installments monthly payment financial aid scholarships "
+        "loan facility banking partners no cost EMI pay in installments easy EMI "
+        "deferred payment fee structure payment options"
+    ),
+    "courses_table": (
+        "courses programs offered university courses table list of programs "
+        "available courses program list all programs offered catalog degree options"
+    ),
+    "faculty_table": (
+        "faculty members professors instructors teaching staff academic team "
+        "our faculty expert faculty meet the faculty staff directory educators"
+    ),
+    "placement_content": (
+        "placement hiring partners career services job placement recruitment "
+        "career outcomes placement record career support placement drive "
+        "industry connections job assistance"
+    ),
+    "faqs": (
+        "frequently asked questions FAQs common queries questions and answers "
+        "common doubts Q and A people also ask student queries help"
+    ),
+    "reviews": (
+        "reviews testimonials student feedback student experiences student speak "
+        "what students say alumni reviews ratings opinions success stories"
+    ),
+    "pros_content": (
+        "pros advantages benefits why choose reasons to choose why us "
+        "why opt for this university key benefits distinguishing features"
+    ),
 }
 
 

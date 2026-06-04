@@ -82,6 +82,147 @@ _NON_ALNUM_RE = re.compile(r"[^\w\s]")
 _MULTI_USCORE_RE = re.compile(r"_+")
 
 
+# ────────────────────────  SECTION KEYWORDS ────────────────────────
+
+# Common section keywords — order matters, longest first so the most
+# specific match wins (e.g. "fee structure" beats "fee").
+SECTION_KEYWORDS: list[str] = [
+    "specialization wise fees", "specialization-wise fees",
+    "fee structure", "fee & emi", "fees & emi", "emi details", "emi options",
+    "fee and emi", "fee payment", "fee details", "course fee",
+    "syllabus/curriculum", "course curriculum",
+    "about the university", "about the course", "about the program",
+    "about the specialization", "course details", "course overview",
+    "program overview", "program details",
+    "admission process", "admission procedure", "how to apply",
+    "enrollment process",
+    "eligibility criteria", "who can apply",
+    "entry requirements", "admission requirements",
+    "approvals and accreditations",
+    "accreditations", "accreditation",
+    "approvals", "recognition", "certifications",
+    "program highlights", "course highlights", "key highlights",
+    "key features", "why this program",
+    "career and placements", "career & placements",
+    "placement support", "career support",
+    "career outcomes",
+    "job roles and salary", "job roles & salary",
+    "job profiles", "job roles", "career opportunities",
+    "placement partners", "top recruiters", "hiring partners",
+    "our recruiters", "recruiting companies",
+    "faculty members", "meet the faculty", "our faculty", "teaching faculty",
+    "student reviews", "what students say", "alumni speak",
+    "frequently asked questions",
+    "quick facts", "key facts",
+    "programs offered", "courses offered",
+    "why choose", "why opt for", "key benefits",
+    "examination pattern", "exam pattern",
+    "exam process", "assessment pattern", "examination process",
+    "available specializations", "other specializations",
+    "explore specializations", "related specializations",
+    "sample certificate", "degree certificate",
+    "no cost emi", "no-cost emi", "easy emi",
+    "short description", "exam schedule",
+    "highlights", "about", "overview", "syllabus", "curriculum",
+    "admission", "apply now",
+    "eligibility", "placements", "placement", "faculty", "reviews",
+    "testimonials", "faqs", "faq", "programs", "courses",
+    "specializations", "certificate", "emi", "introduction",
+    "description", "examination",
+]
+
+# Noise words / patterns that form the university+degree prefix in headings.
+# Applied left-to-right, repeatedly, until stable.
+_PREFIX_NOISE_RES: list[re.Pattern[str]] = [
+    # Degree keywords and their common variants
+    re.compile(
+        r"^(online\s+)?(mba|mca|bba|bca|b\.?\s*tech|m\.?\s*tech|bsc|b\.?\s*sc"
+        r"|msc|m\.?\s*sc|b\.?\s*com|bcom|m\.?\s*com|mcom|ba\b|ma\b|llb|llm"
+        r"|pgdm|phd|b\.?\s*ed|m\.?\s*ed)\s+(in\s+)?",
+        re.IGNORECASE,
+    ),
+    # "University" / "College" / "Institute" + optional "Online"
+    re.compile(r"^university(\s+online)?\s+", re.IGNORECASE),
+    re.compile(r"^(online\s+)?university\s+", re.IGNORECASE),
+    re.compile(r"^college(\s+online)?\s+", re.IGNORECASE),
+    re.compile(r"^institute(\s+online)?\s+", re.IGNORECASE),
+    # Bare "online" left over after degree was stripped
+    re.compile(r"^online\s+", re.IGNORECASE),
+    # Stray leading articles / conjunctions
+    re.compile(r"^(the|a|an|in|of|for|and|&)\s+", re.IGNORECASE),
+]
+
+
+def strip_university_prefix(heading: str) -> str:
+    """Remove university/course name prefix from any heading.
+
+    Works for ANY university — no hardcoded names needed.
+
+    Two-phase strategy
+    ------------------
+    Phase 1 — regex noise stripping:
+        Strips degree keywords (MBA, MCA, …) and structural words
+        (University, Online, College, …) from the left.  Applied in up
+        to 8 passes until the string stabilises.
+
+    Phase 2 — keyword anchor:
+        Searches SECTION_KEYWORDS in the cleaned text.  If found,
+        returns the original heading from that position onward so the
+        original capitalisation is preserved.
+
+    Fallback:
+        If the heading is still long (>4 words), return the last 40 % of
+        words.  Otherwise return as-is.
+
+    Examples::
+
+        "Sharda University Online MBA Fee Structure"         → "Fee Structure"
+        "university online mba accreditations"               → "accreditations"
+        "university online mba syllabus/curriculum"          → "syllabus/curriculum"
+        "university online mba faqs"                         → "faqs"
+        "XYZ College Course Highlights"                      → "highlights"
+        "SRM Online MBA in Finance Management Syllabus"      → "Syllabus"
+    """
+    original = heading.strip()
+    text = original.lower()
+
+    # ── Phase 1: strip noise words ──────────────────────────────────
+    for _ in range(8):          # max 8 passes; converges quickly
+        prev = text
+        for pat in _PREFIX_NOISE_RES:
+            text = pat.sub("", text).strip()
+        if text == prev:
+            break               # stable — no more patterns fire
+
+    # ── Phase 2: keyword anchor — search in cleaned text ───────────
+    for keyword in SECTION_KEYWORDS:
+        if text.startswith(keyword):
+            # Restore original capitalisation from the source heading
+            idx = original.lower().find(keyword)
+            if idx != -1:
+                return original[idx:].strip()
+            return keyword.strip()
+
+    # Also scan anywhere (keyword not at start of cleaned text)
+    for keyword in SECTION_KEYWORDS:
+        if keyword in text:
+            idx = original.lower().find(keyword)
+            if idx != -1:
+                return original[idx:].strip()
+
+    # ── Phase 3: cleaned text is short → use it directly ───────────
+    if text and len(text.split()) <= 5:
+        return text.strip()
+
+    # ── Fallback: return last 40 % of words ────────────────────────
+    words = original.split()
+    if len(words) > 4:
+        cutoff = max(1, int(len(words) * 0.4))
+        return " ".join(words[-cutoff:]).strip()
+
+    return original.strip()
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━  PUBLIC API  ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
@@ -262,7 +403,8 @@ def _normalize_heading(heading: str, uni_name: str, prog_name: str) -> str:
       B. Strip program name
       C. Strip leading/trailing junk (online, in, for, of, -, ,)
       D. Lowercase and trim
-      E. If result < 3 chars, fall back to original heading
+      E. If result < 3 chars, fall back to strip_university_prefix()
+         then finally the original heading lowercased
     """
     result = heading
 
@@ -289,12 +431,68 @@ def _normalize_heading(heading: str, uni_name: str, prog_name: str) -> str:
 
     # E — safety: never return empty or too-short key
     if len(result) < 3:
+        # Try the generic keyword-based stripper before giving up
+        fallback = strip_university_prefix(heading).lower().strip()
+        if len(fallback) >= 3:
+            return fallback
         result = heading.lower().strip()
 
     return result
 
 
 # ━━━━━━━━━━━━━━  DOCUMENT BODY WALK + HEADING DETECTION  ━━━━━━━━━━━━━━
+
+
+# Keywords that must appear for a text to be a genuine section heading.
+# List items / company names / proper nouns usually don't contain these.
+HEADING_MUST_HAVE_KEYWORDS: list[str] = [
+    "about", "overview", "introduction", "accreditation", "eligibility",
+    "admission", "process", "fee", "emi", "payment", "syllabus", "curriculum",
+    "placement", "partner", "recruiter", "job", "role", "salary", "career",
+    "review", "testimonial", "faq", "question", "fact", "highlight",
+    "specialization", "program", "course", "certificate", "exam",
+    "university", "college", "institute", "why", "choose", "apply",
+    "structure", "pattern", "criteria", "requirement", "details",
+]
+
+
+def is_real_section_heading(text: str, style_name: str = "") -> bool:
+    """Return True only if this text is a genuine section heading.
+
+    Distinguishes section headings from list items and content text
+    that happens to be bold (e.g. company names inside a placement
+    section, specialization names inside a bullet list).
+
+    Rules
+    -----
+    * Explicit heading styles (Heading 1/2/3) always qualify.
+    * Single words → always reject (never a section heading).
+    * 2–4 words → must contain at least one heading keyword.
+    * 5+ words with bold formatting → likely a heading (pass through).
+    """
+    text = text.strip()
+    if not text:
+        return False
+
+    # Explicit heading styles always qualify regardless of content
+    if style_name and any(
+        h in style_name.lower() for h in ("heading", "h1", "h2", "h3", "title")
+    ):
+        return True
+
+    lower = text.lower()
+    word_count = len(text.split())
+
+    # Single words are almost never section headings
+    if word_count == 1:
+        return False
+
+    # 2–4 words: require at least one recognisable heading keyword
+    if word_count <= 4:
+        return any(kw in lower for kw in HEADING_MUST_HAVE_KEYWORDS)
+
+    # 5+ words: pass through (handled by bold/style detection upstream)
+    return True
 
 
 def _walk_body(
@@ -308,6 +506,10 @@ def _walk_body(
 
         {"type": "paragraph", "text": str, "is_list_style": bool}
         {"type": "table",     "rows": list[list[str]]}
+
+    Sections with no content items are discarded.
+    Orphaned sections (single-word headings, company names, etc.) have
+    their content merged back into the preceding real section.
     """
     sections: dict[str, list[dict[str, Any]]] = {}
     current_heading = "Introduction"
@@ -325,21 +527,35 @@ def _walk_body(
             if not text:
                 continue
 
+            style_name = ""
+            if para.style and para.style.name:
+                style_name = para.style.name
+
             if _is_heading(para):
-                # Flush previous section
-                if current_content:
-                    sections[current_heading] = current_content
-                current_heading = text
-                current_content = []
+                if is_real_section_heading(text, style_name):
+                    # Flush previous section only if it has content
+                    if current_content:
+                        sections[current_heading] = current_content
+                    current_heading = text
+                    current_content = []
+                else:
+                    # Not a real section heading — treat as content
+                    # and absorb into the current section as a list item.
+                    # (e.g. "Amazon", "Human Resource Management" inside a list)
+                    current_content.append(
+                        {
+                            "type": "paragraph",
+                            "text": text,
+                            "is_list_style": True,  # treat as list item
+                            "style_name": style_name,
+                        }
+                    )
             else:
                 is_list = False
-                style_name = ""
-                if para.style and para.style.name:
-                    style_name = para.style.name
-                    sn = style_name.lower()
-                    is_list = any(
-                        kw in sn for kw in ("list", "bullet", "number")
-                    )
+                sn = style_name.lower()
+                is_list = any(
+                    kw in sn for kw in ("list", "bullet", "number")
+                )
                 current_content.append(
                     {
                         "type": "paragraph",
@@ -362,7 +578,7 @@ def _walk_body(
             if rows:
                 current_content.append({"type": "table", "rows": rows})
 
-    # Flush last section
+    # Flush last section only if it has content
     if current_content:
         sections[current_heading] = current_content
 
@@ -377,6 +593,8 @@ def _is_heading(para) -> bool:
       2. All runs are bold AND the largest font-size ≥ 14 pt
       3. All runs are bold, text < 100 chars, no explicit font size
          (catches headings inheriting size from the Word style)
+      4. ALL CAPS short line (≤ 8 words)
+      5. Title Case short line with no trailing punctuation (≤ 10 words)
     """
     # 1. Style-based
     if para.style and para.style.name:
@@ -384,27 +602,40 @@ def _is_heading(para) -> bool:
         if "Heading" in name or "Title" in name:
             return True
 
+    text = para.text.strip()
+    if not text:
+        return False
+
     # 2+3. Font-based heuristic
     runs = [r for r in para.runs if r.text.strip()]
-    if not runs:
-        return False
+    if runs and all(_run_is_bold(r) for r in runs):
+        max_pt = 0.0
+        for r in runs:
+            size = r.font.size
+            if size is not None:
+                pt_val = size.pt
+                if pt_val > max_pt:
+                    max_pt = pt_val
 
-    if not all(_run_is_bold(r) for r in runs):
-        return False
+        if max_pt >= 14:
+            return True
 
-    max_pt = 0.0
-    for r in runs:
-        size = r.font.size
-        if size is not None:
-            pt_val = size.pt
-            if pt_val > max_pt:
-                max_pt = pt_val
+        # Fallback: all bold + short text + no explicit font size
+        if max_pt == 0.0 and len(text) < 100:
+            return True
 
-    if max_pt >= 14:
+    # 4. ALL CAPS short line
+    if text.isupper() and len(text.split()) <= 8 and len(text) >= 3:
         return True
 
-    # 3. Fallback: all bold + short text + no explicit font size
-    if max_pt == 0.0 and len(para.text.strip()) < 100:
+    # 5. Title Case + short + no trailing sentence punctuation
+    if (
+        not text.endswith(('.', ',', ';', '?'))
+        and text.istitle()
+        and len(text.split()) <= 10
+        and len(text) < 100
+        and len(text) >= 5
+    ):
         return True
 
     return False
