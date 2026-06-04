@@ -34,8 +34,9 @@ UNIVERSITY_FIELDS: dict[str, str] = {
         "name of the university full title institution college"
     ),
     "about_content": (
-        "about university history overview background introduction who we are "
-        "legacy heritage establishment story mission vision main content body description"
+        "about university overview history background introduction who we are "
+        "legacy heritage establishment story mission vision main content body description "
+        "short description hero description brief intro about page intro text"
     ),
     "key_highlights": (
         "key highlights facts quick facts university facts at a glance key numbers "
@@ -54,8 +55,8 @@ UNIVERSITY_FIELDS: dict[str, str] = {
         "alumni community past students successful alumni number of graduates"
     ),
     "stat_hiring_partners": (
-        "hiring partners recruiters placement companies MNC partners corporate tie-ups "
-        "number of recruiters industry partners employer network recruitment companies"
+        "number count badge stat total how many hiring corporate partners "
+        "hero stat badge number 100+ 200+ recruiters count total figure"
     ),
     "stat_years": (
         "years of excellence experience established legacy years of operation age "
@@ -83,9 +84,10 @@ UNIVERSITY_FIELDS: dict[str, str] = {
         "our faculty expert faculty meet the faculty staff directory educators"
     ),
     "placement_content": (
-        "placement hiring partners career services job placement recruitment "
-        "career outcomes placement record career support placement drive "
-        "industry connections job assistance"
+        "placement partners career services job placement recruitment "
+        "career outcomes placement record support placement drive "
+        "industry connections job assistance list of companies top recruiters "
+        "hiring partners company names recruiters who hire our students"
     ),
     "faqs": (
         "frequently asked questions FAQs common queries questions and answers "

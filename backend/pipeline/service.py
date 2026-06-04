@@ -32,6 +32,7 @@ from pipeline.embedder import match_headings_to_fields, initialize_field_index
 from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.enricher import enrich_payload
 from pipeline.validator import validate_payload
+from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text
 from schemas import FIELD_TYPES_BY_TYPE
 
 logger = logging.getLogger("degreebaba.pipeline")
@@ -49,18 +50,31 @@ THRESHOLD_FALLBACK = 0.42  # Send to LLM with all 3 candidates
 # These fields are too important to miss; they get a lower drop threshold so
 # they are always sent to the LLM resolution path.
 _CRITICAL_THRESHOLD_MAP: dict[str, float] = {
+    # Semantically unmistakable single-word section identifiers
+    # These score low purely because prefix noise wasn't fully stripped
     "faq":           0.20,
     "review":        0.20,
     "syllabus":      0.25,
     "curriculum":    0.25,
+    "exam":          0.25,    # examination process, exam pattern
+    "examination":   0.25,
+    "about":         0.28,    # about the course / university
     "admission":     0.28,
     "eligibility":   0.28,
     "fee":           0.28,
+    "emi":           0.28,
     "placement":     0.28,
-    "about":         0.28,
-    "fact":          0.30,
+    "faculty":       0.28,
+    "fact":          0.30,    # course facts, quick facts
     "highlight":     0.30,
     "accreditation": 0.30,
+    "pros":          0.30,    # pros / advantages / benefits
+    "benefit":       0.30,
+    "advantage":     0.30,
+    "detail":        0.30,    # details / info sections
+    "description":   0.30,
+    "course":        0.30,    # courses table
+    "program":       0.30,
 }
 
 
@@ -149,6 +163,47 @@ def run_extraction_pipeline(
         detected_type, forced_page_type is not None,
     )
 
+    # ── Step 2.5: KV pre-pass — intercept key-value metadata sections ──
+    # Some sections contain "Key - Value" pairs that map to MULTIPLE fields.
+    # Detect and parse them directly; remove from section_map so they are
+    # not double-processed by the embedding path.
+    kv_payload: dict[str, Any] = {}
+    kv_records: list[dict[str, Any]] = []
+    kv_headings_to_remove: list[str] = []
+
+    for heading, section_data in list(section_map.items()):
+        if heading.startswith("__"):
+            continue
+        raw_content = flatten_section_to_text(section_data.get("content", ""))
+        if not raw_content or not looks_like_kv_section(raw_content):
+            continue
+
+        kv_fields = parse_kv_section(raw_content)
+        if not kv_fields:
+            continue
+
+        # Only remove from section_map if we extracted ≥ 1 field
+        kv_headings_to_remove.append(heading)
+        for kv in kv_fields:
+            fkey = kv["field_key"]
+            # Don't overwrite a value that came from a more specific section
+            if fkey not in kv_payload:
+                kv_payload[fkey] = kv["value"]
+                kv_records.append({
+                    "field_key":      fkey,
+                    "heading_in_doc": heading,
+                    "value":          str(kv["value"]),
+                    "confidence":     kv["confidence"],
+                    "status":         "mapped",
+                    "source":         "kv_parser",
+                })
+
+    for h in kv_headings_to_remove:
+        logger.info(
+            "KV_SECTION: removed %r from embedding pass (%d fields extracted)",
+            h, sum(1 for r in kv_records if r["heading_in_doc"] == h),
+        )
+
     # ── Step 3: Match headings → fields ──
     initialize_field_index()
     matches = match_headings_to_fields(section_map, detected_type)
@@ -164,6 +219,14 @@ def run_extraction_pipeline(
 
     #   Pass 2 — extract content for each assigned field (Claude calls)
     payload, mapping_records = _extract_assignments(assignments, field_types)
+
+    # ── Merge KV pre-pass results (fills gaps not covered by LLM) ──
+    for fkey, fval in kv_payload.items():
+        if payload.get(fkey) is None:
+            payload[fkey] = fval
+            logger.info("KV_MERGED: %s = %r", fkey, str(fval)[:120])
+    # KV records always appended (even if superseded by LLM, keeps audit trail)
+    mapping_records.extend(kv_records)
 
     # ── Step 5: Enrich payload (regex, zero API calls) ──
     payload, enrichment_log = enrich_payload(payload, section_map, detected_type, filename=filename)

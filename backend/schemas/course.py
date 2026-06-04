@@ -70,9 +70,9 @@ COURSE_FIELDS: dict[str, str] = {
         "academic plan study plan modules units course content semester topics subjects list"
     ),
     "placement_partners": (
-        "placement partners hiring partners recruiters career services top recruiters "
-        "recruiting companies employer network MNC partners industry partners placements "
-        "campus recruitment companies hiring organizations"
+        "placement partners list of companies hiring partners recruiters who hire "
+        "campus recruitment companies top recruiters employer network company names "
+        "amazon infosys tcs wipro mnc partners list industry partners career connections"
     ),
     "job_roles": (
         "job roles salary career opportunities positions after course job profiles "

@@ -160,40 +160,98 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
 # ────────────────────────── public API ──────────────────────────
 
 
+# ────────────────────────── filename cleaner ──────────────────────────
+
+# Applied in order; each step removes a specific class of file-naming noise.
+_FILENAME_CLEAN_STEPS: list[tuple[str, str]] = [
+    (r"\.docx?$",                                     ""),   # extension
+    (r"^copy\s+of\s+",                                ""),   # "Copy of ..."
+    (r"^copy\s*[-_]",                                 ""),   # "Copy-" / "Copy_"
+    (r"\s*\(\d+\)\s*$",                               ""),   # trailing "(1)", "(2)"
+    (r"\s*[-_]\s*\d+\s*$",                            ""),   # trailing "- 1" / "_2"
+    (r"\s*v\d+(?:\.\d+)?\s*$",                        ""),   # trailing "v2", "v1.1"
+    (r"\s*(?:final|draft|updated?|new|revised?)\s*$", ""),   # trailing descriptor
+    (r"[-_]+",                                        " "),  # separators → spaces
+    (r"\s+page\s*$",                                  ""),   # trailing "page"
+    (r"\s{2,}",                                       " "),  # double spaces
+]
+
+_PAGE_NOISE_RE = re.compile(
+    r"\s+(?:university\s+)?page\s*$"
+    r"|\s+(?:course|program)\s*$",
+    re.IGNORECASE,
+)
+
+
+def clean_filename(filename: str) -> str:
+    """Strip common file-naming noise from a filename.
+
+    Generic — works for any institution, any naming convention.
+
+    Examples::
+
+        "Copy of Mody University Page (1).docx" → "Mody University"
+        "NMIMS_University_v2_final.docx"        → "NMIMS University"
+        "university-course-2026 (3).docx"       → "university course 2026"
+    """
+    name = filename.strip()
+    for pattern, replacement in _FILENAME_CLEAN_STEPS:
+        name = re.sub(pattern, replacement, name, flags=re.IGNORECASE).strip()
+    name = _PAGE_NOISE_RE.sub("", name).strip()
+    return name.strip()
+
+
 def _enrich_course_name(
     payload: dict[str, Any],
     section_map: dict[str, dict[str, Any]],
     filename: str,
+    page_type: str,
     enrichment_log: list[dict[str, str]],
 ) -> None:
-    """Fill course_name / spec_name / university_name from filename or first heading.
+    """Fill name fields from filename or first heading.
 
-    Runs only when the field is still None after main extraction.
+    Page-type guard:
+    - university pages → only fill university_name
+    - course pages     → fill course_name; NOT spec_name
+    - spec pages       → fill spec_name and course_name
+
     No API calls — pure regex + heuristic.
     """
-    import re as _re
     from pipeline.docx_parser import strip_university_prefix
 
-    for field_key in ("course_name", "spec_name", "university_name"):
+    # Decide which fields to populate based on page type
+    if page_type == "university":
+        candidate_fields = ["university_name"]
+    elif page_type == "course":
+        candidate_fields = ["course_name"]
+    else:  # specialization
+        candidate_fields = ["spec_name", "course_name"]
+
+    for field_key in candidate_fields:
         if payload.get(field_key) is not None:
             continue
 
-        # Source 1: filename
-        name = _re.sub(r"\.docx$", "", filename, flags=_re.IGNORECASE)
-        name = _re.sub(r"^copy[\s_]+of[\s_]+", "", name, flags=_re.IGNORECASE)
+        # Source 1: cleaned filename
+        name = clean_filename(filename)
         name = strip_university_prefix(name)
-        name = _re.sub(
-            r"\b(program|course|page|doc|document|file)\b", "", name,
-            flags=_re.IGNORECASE,
+        name = re.sub(
+            r"\b(program|course|page|doc|document|file|university|college)\b",
+            "",
+            name,
+            flags=re.IGNORECASE,
         ).strip(" -_")
+        name = re.sub(r"\s{2,}", " ", name).strip()
+
         if name and len(name) > 3:
-            payload[field_key] = name
+            payload[field_key] = name.title()
             enrichment_log.append({
                 "field_key": field_key,
-                "status": "enriched",
-                "source": f"filename:{filename}",
+                "status":    "enriched",
+                "source":    f"filename:{filename}",
             })
-            logger.info("ENRICHED: %s = %r (source=filename)", field_key, name)
+            logger.info(
+                "ENRICHED: %s = %r (source=filename)", field_key, name
+            )
             continue
 
         # Source 2: first real section heading
@@ -202,16 +260,19 @@ def _enrich_course_name(
                 continue
             original_heading = section.get("heading_original", heading)
             stripped = strip_university_prefix(original_heading)
-            stripped = _re.sub(r"^about\s+", "", stripped, flags=_re.IGNORECASE).strip()
+            stripped = re.sub(
+                r"^about\s+", "", stripped, flags=re.IGNORECASE
+            ).strip()
             if stripped and len(stripped) > 3:
                 payload[field_key] = stripped
                 enrichment_log.append({
                     "field_key": field_key,
-                    "status": "enriched",
-                    "source": f"first_heading:{heading}",
+                    "status":    "enriched",
+                    "source":    f"first_heading:{heading}",
                 })
                 logger.info(
-                    "ENRICHED: %s = %r (source=first_heading)", field_key, stripped
+                    "ENRICHED: %s = %r (source=first_heading)",
+                    field_key, stripped,
                 )
             break   # only try first section
 
@@ -361,10 +422,96 @@ def enrich_payload(
             )
 
     # ── Additional enrichment rules (non-stat) ──
-    _enrich_course_name(payload, section_map, filename, enrichment_log)
+    _enrich_course_name(payload, section_map, filename, page_type, enrichment_log)
     _fill_specializations_from_fees(payload, enrichment_log)
+    _derive_stats(payload, enrichment_log)
 
     return payload, enrichment_log
+
+
+def _derive_stats(
+    payload: dict[str, Any],
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Derive missing stat fields from already-extracted payload values.
+
+    Generic — no institution-specific logic. Works for any institution.
+    Each derivation is based on a semantic relationship between fields,
+    not on specific institution names or document structures.
+    """
+    # established_year text → stat_years (badge)
+    if not payload.get("stat_years") and payload.get("established_year"):
+        year_raw = str(payload["established_year"]).strip()
+        m = re.search(r"\b(19|20)\d{2}\b", year_raw)
+        if m:
+            payload["stat_years"] = m.group(0)
+            enrichment_log.append({
+                "field_key": "stat_years",
+                "status":    "enriched",
+                "source":    "derive:established_year",
+            })
+            logger.info("DERIVED: stat_years = %r", payload["stat_years"])
+
+    # courses_table row count → stat_programs
+    if not payload.get("stat_programs"):
+        ct = payload.get("courses_table")
+        if isinstance(ct, list) and len(ct) > 0:
+            payload["stat_programs"] = f"{len(ct)}+"
+            enrichment_log.append({
+                "field_key": "stat_programs",
+                "status":    "enriched",
+                "source":    "derive:courses_table_count",
+            })
+            logger.info("DERIVED: stat_programs = %r", payload["stat_programs"])
+
+    # faculty_table row count → stat_faculty (if field exists on schema)
+    if not payload.get("stat_faculty"):
+        ft = payload.get("faculty_table")
+        if isinstance(ft, list) and len(ft) > 0:
+            payload["stat_faculty"] = f"{len(ft)}+"
+            enrichment_log.append({
+                "field_key": "stat_faculty",
+                "status":    "enriched",
+                "source":    "derive:faculty_table_count",
+            })
+            logger.info("DERIVED: stat_faculty = %r", payload["stat_faculty"])
+
+    # accreditations text → naac_grade (extract NAAC A+/B++ etc.)
+    if not payload.get("naac_grade"):
+        accr = payload.get("accreditations") or payload.get("course_accreditations", "")
+        if accr:
+            flat = accr if isinstance(accr, str) else " ".join(str(v) for v in accr)
+            m = re.search(r"NAAC\s+([A-F]\+{0,2})", flat, re.IGNORECASE)
+            if m:
+                payload["naac_grade"] = m.group(1).upper()
+                enrichment_log.append({
+                    "field_key": "naac_grade",
+                    "status":    "enriched",
+                    "source":    "derive:accreditations",
+                })
+                logger.info("DERIVED: naac_grade = %r", payload["naac_grade"])
+
+    # about_content text → established_year (if still missing)
+    if not payload.get("established_year"):
+        about = payload.get("about_content", "")
+        if about:
+            flat = about if isinstance(about, str) else str(about)
+            m = re.search(
+                r"(?:established|founded|since|inception)[,\s]+(?:in\s+)?(\d{4})",
+                flat,
+                re.IGNORECASE,
+            )
+            if m:
+                payload["established_year"] = m.group(1)
+                enrichment_log.append({
+                    "field_key": "established_year",
+                    "status":    "enriched",
+                    "source":    "derive:about_content",
+                })
+                logger.info(
+                    "DERIVED: established_year = %r", payload["established_year"]
+                )
+
 
 
 # ────────────────────────── extractors ──────────────────────────

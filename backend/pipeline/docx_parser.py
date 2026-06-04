@@ -84,143 +84,203 @@ _MULTI_USCORE_RE = re.compile(r"_+")
 
 # ────────────────────────  SECTION KEYWORDS ────────────────────────
 
-# Common section keywords — order matters, longest first so the most
-# specific match wins (e.g. "fee structure" beats "fee").
+# Terminal section keywords — these appear at the RIGHT end of institution headings.
+# Ordered longest-first so the most specific keyword wins.
+# Key insight: headings like "XYZ University Online MBA [keyword]" always end
+# with the section name. rfind() on this list finds the correct anchor.
 SECTION_KEYWORDS: list[str] = [
+    # ── Multi-word (longest first) ──
     "specialization wise fees", "specialization-wise fees",
-    "fee structure", "fee & emi", "fees & emi", "emi details", "emi options",
-    "fee and emi", "fee payment", "fee details", "course fee",
-    "syllabus/curriculum", "course curriculum",
-    "about the university", "about the course", "about the program",
-    "about the specialization", "course details", "course overview",
+    "job roles & salary", "job roles and salary",
+    "frequently asked questions",
+    "approvals and accreditations",
+    "sample certificate photo", "sample certificate",
+    "career and placements", "career & placements",
+    "placement partners", "top recruiters", "hiring partners",
+    "faculty members", "meet the faculty", "our faculty",
+    "student reviews", "what students say", "alumni speak",
+    "program highlights", "course highlights", "key highlights",
     "program overview", "program details",
+    "about the university", "about the course", "about the program",
+    "about the specialization",
+    "course curriculum", "course overview", "course details",
+    "syllabus/curriculum", "syllabus / curriculum",
+    "fee structure", "fee & emi", "fees & emi",
+    "emi details", "emi options", "fee and emi",
+    "fee payment", "fee details", "course fee",
     "admission process", "admission procedure", "how to apply",
     "enrollment process",
     "eligibility criteria", "who can apply",
     "entry requirements", "admission requirements",
-    "approvals and accreditations",
-    "accreditations", "accreditation",
-    "approvals", "recognition", "certifications",
-    "program highlights", "course highlights", "key highlights",
-    "key features", "why this program",
-    "career and placements", "career & placements",
-    "placement support", "career support",
-    "career outcomes",
-    "job roles and salary", "job roles & salary",
-    "job profiles", "job roles", "career opportunities",
-    "placement partners", "top recruiters", "hiring partners",
-    "our recruiters", "recruiting companies",
-    "faculty members", "meet the faculty", "our faculty", "teaching faculty",
-    "student reviews", "what students say", "alumni speak",
-    "frequently asked questions",
-    "quick facts", "key facts",
-    "programs offered", "courses offered",
-    "why choose", "why opt for", "key benefits",
-    "examination pattern", "exam pattern",
-    "exam process", "assessment pattern", "examination process",
+    "examination pattern", "examination process",
+    "exam pattern", "exam process",
+    "assessment pattern",
     "available specializations", "other specializations",
     "explore specializations", "related specializations",
-    "sample certificate", "degree certificate",
+    "degree certificate",
     "no cost emi", "no-cost emi", "easy emi",
     "short description", "exam schedule",
-    "highlights", "about", "overview", "syllabus", "curriculum",
-    "admission", "apply now",
-    "eligibility", "placements", "placement", "faculty", "reviews",
-    "testimonials", "faqs", "faq", "programs", "courses",
-    "specializations", "certificate", "emi", "introduction",
-    "description", "examination",
+    "job profiles", "job roles", "career opportunities",
+    "placement support", "career support",
+    "career outcomes",
+    "key features", "why this program",
+    "programs offered", "courses offered",
+    "why choose", "why opt for", "key benefits",
+    "quick facts", "key facts",
+    "course facts",
+    "our recruiters", "recruiting companies",
+    "teaching faculty",
+    # ── Single-word (shorter; must come after all multi-word) ──
+    "accreditations", "accreditation",
+    "approvals", "recognition", "certifications",
+    "highlights", "overview", "syllabus", "curriculum",
+    "admission", "eligibility",
+    "placements", "placement", "faculty", "reviews",
+    "testimonials", "faqs", "faq",
+    "specializations", "certificate", "emi",
+    "introduction", "description", "examination",
+    "courses", "programs",
+    "details", "info", "information",
+    "pros", "benefits", "advantages",
+    "facts", "about",
 ]
 
-# Noise words / patterns that form the university+degree prefix in headings.
-# Applied left-to-right, repeatedly, until stable.
-_PREFIX_NOISE_RES: list[re.Pattern[str]] = [
-    # Degree keywords and their common variants
-    re.compile(
-        r"^(online\s+)?(mba|mca|bba|bca|b\.?\s*tech|m\.?\s*tech|bsc|b\.?\s*sc"
-        r"|msc|m\.?\s*sc|b\.?\s*com|bcom|m\.?\s*com|mcom|ba\b|ma\b|llb|llm"
-        r"|pgdm|phd|b\.?\s*ed|m\.?\s*ed)\s+(in\s+)?",
-        re.IGNORECASE,
-    ),
-    # "University" / "College" / "Institute" + optional "Online"
-    re.compile(r"^university(\s+online)?\s+", re.IGNORECASE),
-    re.compile(r"^(online\s+)?university\s+", re.IGNORECASE),
-    re.compile(r"^college(\s+online)?\s+", re.IGNORECASE),
-    re.compile(r"^institute(\s+online)?\s+", re.IGNORECASE),
-    # Bare "online" left over after degree was stripped
-    re.compile(r"^online\s+", re.IGNORECASE),
-    # Stray leading articles / conjunctions
-    re.compile(r"^(the|a|an|in|of|for|and|&)\s+", re.IGNORECASE),
-]
+# Noise token patterns — these appear on the LEFT in institution headings.
+# Covers: degree-level words AND institution-type words.
+# Applied LEFT-TO-RIGHT in one pass using a single combined pattern.
+# Does NOT anchor to ^ because an unknown proper noun may precede the noise.
+_NOISE_TOKEN_RE = re.compile(
+    r"\b(?:"
+    # Institution type words
+    r"university|college|institute|institution|academy|school|polytechnic"
+    r"|department|dept"
+    r"|"
+    # Delivery mode words
+    r"online|distance|hybrid|blended"
+    r"|"
+    # Degree / program type words
+    r"mba|mca|bba|bca|b\.?\s*tech|m\.?\s*tech|bsc|b\.?\s*sc"
+    r"|msc|m\.?\s*sc|b\.?\s*com|bcom|m\.?\s*com|mcom"
+    r"|ba|ma|llb|llm|phd|pgdm|diploma|pg"
+    r"|"
+    # Structural connector words (only as prefix noise)
+    r"program|course|page"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Stray leading conjunctions / prepositions left after noise removal
+_JUNK_PREFIX_RE = re.compile(r"^[\s\-–—,:.]+\b(in|of|for|and|&|the|a|an)\b[\s\-–—,:.]*", re.IGNORECASE)
 
 
 def strip_university_prefix(heading: str) -> str:
-    """Remove university/course name prefix from any heading.
+    """Remove any institution/program name prefix from a document heading.
 
-    Works for ANY university — no hardcoded names needed.
+    Works for ANY institution — zero hardcoded names.
 
-    Two-phase strategy
-    ------------------
-    Phase 1 — regex noise stripping:
-        Strips degree keywords (MBA, MCA, …) and structural words
-        (University, Online, College, …) from the left.  Applied in up
-        to 8 passes until the string stabilises.
+    Strategy
+    --------
+    1. **rfind keyword anchor** (primary):
+       Scan SECTION_KEYWORDS using *rfind* (rightmost match).  The keyword
+       is always at the RIGHT end of institutional headings like
+       ``"XYZ University Online MBA [keyword]"``.  Returning from the
+       rightmost keyword position gives the cleanest result.
 
-    Phase 2 — keyword anchor:
-        Searches SECTION_KEYWORDS in the cleaned text.  If found,
-        returns the original heading from that position onward so the
-        original capitalisation is preserved.
+    2. **Noise-token scrubbing** (secondary):
+       Remove institution-type and degree-type noise tokens from the
+       cleaned text, then strip stray leading conjunctions.
 
-    Fallback:
-        If the heading is still long (>4 words), return the last 40 % of
-        words.  Otherwise return as-is.
+    3. **Short result fast-return**:
+       If cleaned text ≤ 5 words, return it directly.
+
+    4. **Last-40%-words fallback**:
+       For long headings where no keyword was found, return the last 40 %
+       of words.
 
     Examples::
 
-        "Sharda University Online MBA Fee Structure"         → "Fee Structure"
-        "university online mba accreditations"               → "accreditations"
-        "university online mba syllabus/curriculum"          → "syllabus/curriculum"
-        "university online mba faqs"                         → "faqs"
-        "XYZ College Course Highlights"                      → "highlights"
-        "SRM Online MBA in Finance Management Syllabus"      → "Syllabus"
+        "Mody University Online details"         → "details"
+        "about Mody University Online"           → "about"
+        "Some University course facts"           → "course facts"
+        "Mody University Online pros"            → "pros"
+        "XYZ College Online BCA Syllabus"        → "Syllabus"
+        "abc university admission process"       → "admission process"
+        "Greenfield Academy Diploma syllabus"    → "syllabus"
     """
     original = heading.strip()
-    text = original.lower()
+    lower = original.lower()
 
-    # ── Phase 1: strip noise words ──────────────────────────────────
-    for _ in range(8):          # max 8 passes; converges quickly
-        prev = text
-        for pat in _PREFIX_NOISE_RES:
-            text = pat.sub("", text).strip()
-        if text == prev:
-            break               # stable — no more patterns fire
-
-    # ── Phase 2: keyword anchor — search in cleaned text ───────────
+    # ── Phase 1: rfind keyword anchor ───────────────────────────────────────
+    # Collect ALL keyword matches: (start_idx, end_idx, keyword)
+    # Then select the one whose start is furthest right.
+    # Tie-break: prefer longer keyword (to pick "syllabus/curriculum" over "curriculum").
+    # Overlap rule: if keyword B starts inside keyword A's span, discard B — A is longer.
+    all_matches: list[tuple[int, int, str]] = []
     for keyword in SECTION_KEYWORDS:
-        if text.startswith(keyword):
-            # Restore original capitalisation from the source heading
-            idx = original.lower().find(keyword)
-            if idx != -1:
-                return original[idx:].strip()
-            return keyword.strip()
+        idx = lower.rfind(keyword)
+        if idx == -1:
+            continue
+        all_matches.append((idx, idx + len(keyword), keyword))
 
-    # Also scan anywhere (keyword not at start of cleaned text)
-    for keyword in SECTION_KEYWORDS:
-        if keyword in text:
-            idx = original.lower().find(keyword)
-            if idx != -1:
-                return original[idx:].strip()
+    # Remove dominated matches: if match B is completely contained in match A, drop B
+    # (sort by start desc, then end desc to process rightmost/longest first)
+    all_matches.sort(key=lambda m: (m[0], -(m[1] - m[0])))  # start asc, then longest first
 
-    # ── Phase 3: cleaned text is short → use it directly ───────────
-    if text and len(text.split()) <= 5:
-        return text.strip()
+    # Among matches that don't overlap each other, find the rightmost-starting one
+    best: tuple[int, int, str] | None = None
+    for m in all_matches:
+        if best is None:
+            best = m
+            continue
+        m_start, m_end, m_kw = m
+        b_start, b_end, b_kw = best
+        # If m starts after best ends → m is further right → take m
+        if m_start >= b_end:
+            best = m
+        # If m overlaps best (m starts inside best's span) → m is a sub-keyword of best → skip
+        # If m starts at same position as best → prefer longer (already sorted that way)
 
-    # ── Fallback: return last 40 % of words ────────────────────────
+    if best is not None:
+        best_idx, best_end, best_kw = best
+        result = original[best_idx:].strip()
+
+        # Guard: keyword was at position 0 AND heading is multi-word
+        # e.g. "about mody university online" → keyword "about" found at 0
+        # → scrub noise tokens from the full string then return
+        if best_idx == 0 and len(original.split()) > 1:
+            scrubbed = _NOISE_TOKEN_RE.sub(" ", lower).strip()
+            scrubbed = _JUNK_PREFIX_RE.sub("", scrubbed).strip()
+            scrubbed = re.sub(r"\s{2,}", " ", scrubbed).strip()
+            # Only use scrubbed if it's shorter (noise was actually removed)
+            # and still contains the keyword
+            if (scrubbed and len(scrubbed) < len(lower)
+                    and best_kw in scrubbed):
+                # If scrubbed is just the keyword alone, great; otherwise take it
+                return scrubbed.strip()
+            # If scrubbed removed the keyword too (e.g. "course" got removed),
+            # fall back to the keyword itself
+            if scrubbed and best_kw not in scrubbed:
+                return best_kw.strip()
+        return result
+
+    # ── Phase 2: noise-token scrubbing ──────────────────────────────────────
+    scrubbed = _NOISE_TOKEN_RE.sub(" ", lower).strip()
+    scrubbed = _JUNK_PREFIX_RE.sub("", scrubbed).strip()
+    scrubbed = re.sub(r"\s{2,}", " ", scrubbed).strip()
+
+    if scrubbed and len(scrubbed.split()) <= 5:
+        return scrubbed.strip()
+
+    # ── Phase 3: last 40 % of words fallback ────────────────────────────────
     words = original.split()
-    if len(words) > 4:
+    if len(words) > 3:
         cutoff = max(1, int(len(words) * 0.4))
         return " ".join(words[-cutoff:]).strip()
 
     return original.strip()
+
+
+
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━  PUBLIC API  ━━━━━━━━━━━━━━━━━━━━━━━━━━
