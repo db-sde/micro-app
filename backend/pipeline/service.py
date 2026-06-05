@@ -33,6 +33,7 @@ from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.enricher import enrich_payload
 from pipeline.validator import validate_payload
 from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text
+from pipeline.classifier import classify_heading, VALID_ACF_FIELDS
 from schemas import FIELD_TYPES_BY_TYPE
 
 logger = logging.getLogger("degreebaba.pipeline")
@@ -195,7 +196,7 @@ def run_extraction_pipeline(
                     "value":          str(kv["value"]),
                     "confidence":     kv["confidence"],
                     "status":         "mapped",
-                    "source":         "kv_parser",
+                    "source":         "KV",
                 })
 
     for h in kv_headings_to_remove:
@@ -204,17 +205,56 @@ def run_extraction_pipeline(
             h, sum(1 for r in kv_records if r["heading_in_doc"] == h),
         )
 
+    # ── Step 2.75: Classify Headings (Three-Tier Mapping) ──
+    direct_assignments: list[dict[str, Any]] = []
+    sections_for_embedding: dict[str, dict[str, Any]] = {}
+
+    for heading, section_data in list(section_map.items()):
+        if heading.startswith("__"):
+            sections_for_embedding[heading] = section_data
+            continue
+
+        result = classify_heading(heading, VALID_ACF_FIELDS)
+        section_data["classification"] = result
+        section_data["display_heading"] = result["display"]
+
+        if result["route"] == "direct":
+            # TIER 1 — skip embedding entirely
+            direct_assignments.append({
+                "heading": heading,
+                "content": section_data.get("content", section_data),
+                "field_key": result["field_key"],
+                "confidence": 1.0,
+                "source": "tagged",
+                "tier": 1,
+            })
+        else:
+            # TIER 2 or 3 — use embed_heading for embedding
+            section_data["heading_for_embedding"] = result["embed_heading"]
+            sections_for_embedding[heading] = section_data
+
     # ── Step 3: Match headings → fields ──
     initialize_field_index()
-    matches = match_headings_to_fields(section_map, detected_type)
+    matches = match_headings_to_fields(sections_for_embedding, detected_type)
     field_types = FIELD_TYPES_BY_TYPE.get(detected_type, {})
 
     # ── Step 4: Two-pass score routing + extraction ──
     #   Pass 1 — choose best field per heading, resolve duplicates
     assignments = _route_headings(matches, detected_type)
+
+    #   Pass 1.5 — Merge Tier 1 (direct_assignments) into assignments
+    for da in direct_assignments:
+        assignments[da["field_key"]] = {
+            "heading": da["heading"],
+            "content": da["content"],
+            "confidence": da["confidence"],
+            "source": da["source"],
+            "content_len": len(str(da["content"])),
+        }
+
     logger.info(
-        "ASSIGNMENTS: %d fields assigned from %d headings",
-        len(assignments), len(matches),
+        "ASSIGNMENTS: %d fields assigned (%d direct, %d routed)",
+        len(assignments), len(direct_assignments), len(assignments) - len(direct_assignments),
     )
 
     #   Pass 2 — extract content for each assigned field (Claude calls)
@@ -244,7 +284,7 @@ def run_extraction_pipeline(
                 "value": db_value,
                 "confidence": 0.95,
                 "status": "mapped",
-                "source": "enrichment",
+                "source": "ENRICHED",
             })
 
     # ── Step 6: Validate ──
@@ -523,13 +563,27 @@ def _extract_assignments(
         if value is not None and not isinstance(value, str):
             db_value = json.dumps(value, ensure_ascii=False)
 
+        # Format source for frontend display
+        display_source = source.upper()
+        if source == "tagged":
+            display_source = "TAGGED"
+        elif source == "ai":
+            display_source = "AI"
+        elif source.startswith("embedding"):
+            display_source = "EMBED"
+        elif source == "enrichment":
+            display_source = "ENRICHED"
+        elif source == "kv_parser":
+            display_source = "KV"
+
         mapping_records.append({
             "field_key": chosen_field,
             "heading_in_doc": heading,
             "value": db_value,
             "confidence": confidence,
             "status": "mapped" if value is not None else "missing",
-            "source": source,
+            "source": display_source,
         })
 
     return payload, mapping_records
+

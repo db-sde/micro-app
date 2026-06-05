@@ -173,19 +173,25 @@ def match_headings_to_fields(
         sections_dict = section_map
 
     # Collect headings to embed (skip internal keys)
-    headings: list[str] = [
-        h for h in sections_dict.keys() if not h.startswith("__")
-    ]
-    if not headings:
+    original_headings: list[str] = []
+    headings_to_embed: list[str] = []
+
+    for h, section_data in sections_dict.items():
+        if h.startswith("__"):
+            continue
+        original_headings.append(h)
+        headings_to_embed.append(section_data.get("heading_for_embedding", h))
+
+    if not headings_to_embed:
         print("No headings found in document — skipping embedding.")
         return []
-    print(headings)
+    print(headings_to_embed)
 
-    heading_vectors = embed_texts(headings)
+    heading_vectors = embed_texts(headings_to_embed)
 
     results: list[dict[str, Any]] = []
 
-    for heading, h_vec in zip(headings, heading_vectors):
+    for heading, h_vec in zip(original_headings, heading_vectors):
         # Score against every field
         scored: list[dict[str, Any]] = []
         for field_key, field_data in field_idx.items():
