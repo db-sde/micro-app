@@ -4,7 +4,7 @@ import {
   TopBar, ConfidenceBar, LoadingSpinner, showToast
 } from '../components/Components';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 /* ACF fields per page type — must match backend schemas exactly */
 const ACF_FIELDS = {

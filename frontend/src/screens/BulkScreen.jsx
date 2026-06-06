@@ -4,7 +4,7 @@ import {
   LoadingSpinner, showToast, formatFileSize
 } from '../components/Components';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export default function BulkScreen() {
   const [file, setFile] = useState(null);

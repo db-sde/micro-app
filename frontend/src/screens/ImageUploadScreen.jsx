@@ -4,7 +4,7 @@ import {
   TopBar, StepIndicator, showToast, formatFileSize
 } from '../components/Components';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 const IMAGE_SLOTS = {
   university: [

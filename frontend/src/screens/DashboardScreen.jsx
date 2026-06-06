@@ -5,7 +5,7 @@ import {
   SkeletonStats, SkeletonTable, showToast, relativeDate
 } from '../components/Components';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
