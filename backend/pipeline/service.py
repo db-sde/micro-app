@@ -2,7 +2,7 @@
 Shared extraction pipeline service.
 
 Single source of truth for the full extraction pipeline, used by both
-the FastAPI ``/upload`` endpoint and the Celery bulk-processing task.
+the FastAPI ``/upload`` endpoint and the background bulk-processing task.
 
 Pipeline stages
 ---------------
@@ -125,7 +125,7 @@ def run_extraction_pipeline(
     """Execute the full extraction pipeline and persist results.
 
     This is the **single implementation** of the pipeline.  Both the
-    ``/upload`` endpoint and the Celery ``process_bulk_file`` task
+    ``/upload`` endpoint and the background ``run_bulk_job_in_background`` task
     delegate here.
 
     Parameters

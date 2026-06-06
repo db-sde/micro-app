@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Query
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -61,9 +61,12 @@ app = FastAPI(
     description="Parse .docx files, map content to WordPress ACF fields, and export JSON payloads.",
 )
 
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+origins = [origin.strip() for origin in frontend_url.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -418,6 +421,7 @@ async def download_payload(upload_id: int, db: Session = Depends(get_db)):
 
 @app.post("/bulk")
 async def bulk_upload(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     dry_run: bool = Form(default=False),
     page_type: str | None = Form(default=None),
@@ -425,8 +429,7 @@ async def bulk_upload(
 ):
     """Upload a .zip of .docx files for batch processing.
 
-    If Celery/Redis is available, files are queued as background tasks.
-    Otherwise, they are processed sequentially in-process.
+    Uses background tasks to process files sequentially without blocking the API.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
@@ -471,61 +474,14 @@ async def bulk_upload(
     db.commit()
     db.refresh(job)
 
-    # Try Celery, fall back to sequential processing
-    celery_available = False
-    try:
-        from tasks import process_bulk_file
-
-        # Quick connectivity check
-        celery_app_instance = process_bulk_file.app
-        celery_app_instance.connection_for_write().ensure_connection(max_retries=1)
-        celery_available = True
-    except Exception:
-        logger.info("Celery/Redis not available — processing bulk files sequentially.")
-
-    if celery_available:
-        for filename, fbytes in docx_entries:
-            process_bulk_file.delay(
-                job.id,
-                fbytes.hex(),
-                filename,
-                page_type,
-            )
-        job.status = "processing"
-        db.commit()
-    else:
-        # Sequential fallback
-        job.status = "processing"
-        db.commit()
-
-        results: list[dict[str, Any]] = []
-        for filename, fbytes in docx_entries:
-            file_result: dict[str, Any] = {
-                "filename": filename,
-                "status": "failed",
-                "error": None,
-                "upload_id": None,
-                "quality_score": 0.0,
-            }
-            try:
-                pipeline_result = _run_pipeline(fbytes, filename, page_type, db)
-                file_result["status"] = "success"
-                file_result["upload_id"] = pipeline_result["upload_id"]
-                file_result["quality_score"] = pipeline_result["validation"]["summary"]["quality_score"]
-            except Exception as exc:
-                file_result["error"] = str(exc)
-                logger.error("Bulk file %s failed: %s", filename, exc)
-
-            results.append(file_result)
-
-            # Update progress
-            job.processed_files = (job.processed_files or 0) + 1
-            job.results = json.dumps(results, ensure_ascii=False)
-            db.commit()
-
-        job.status = "completed" if all(r["status"] == "success" for r in results) else "completed_with_errors"
-        job.results = json.dumps(results, ensure_ascii=False)
-        db.commit()
+    # Import and queue background task
+    from tasks import run_bulk_job_in_background
+    background_tasks.add_task(
+        run_bulk_job_in_background,
+        job.id,
+        docx_entries,
+        page_type,
+    )
 
     return {
         "job_id": job.id,
