@@ -149,11 +149,26 @@ export function StatCard({ icon, label, value, trend, color = 'orange' }) {
 export function StatusBadge({ status }) {
   if (!status) return null;
   const normalized = status.toLowerCase().replace(/\s+/g, '');
-  const displayLabel = status.charAt(0).toUpperCase() + status.slice(1);
+
+  const statusBadgeMap = {
+    'complete':   { status: 'published', label: 'Complete'   },
+    'processed':  { status: 'published', label: 'Processed'  },
+    'published':  { status: 'published', label: 'Published'  },
+    'draft':      { status: 'draft',     label: 'Draft'      },
+    'validated':  { status: 'mapped',    label: 'Validated'  },
+    'processing': { status: 'processing',label: 'Processing' },
+    'pending':    { status: 'draft',     label: 'Pending'    },
+    'failed':     { status: 'failed',    label: 'Failed'     },
+    'issues':     { status: 'issues',    label: 'Issues'     },
+    'error':      { status: 'failed',    label: 'Error'      },
+  };
+
+  const badgeInfo = statusBadgeMap[normalized] || { status: normalized, label: status.charAt(0).toUpperCase() + status.slice(1) };
+
   return (
-    <span className={`badge badge--${normalized}`} id={`badge-${normalized}`}>
+    <span className={`badge badge--${badgeInfo.status}`} id={`badge-${normalized}`}>
       <span className="badge-dot" />
-      {displayLabel}
+      {badgeInfo.label}
     </span>
   );
 }

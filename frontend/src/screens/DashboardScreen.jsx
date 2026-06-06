@@ -8,36 +8,41 @@ import {
 const API_BASE = '/api';
 
 export default function DashboardScreen() {
-  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [recent, setRecent] = useState([]);
 
-  const fetchHistory = async () => {
+  const fetchDashboardData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE}/history`);
+      // Fetch recent uploads (fetching enough to derive aggregate stats too)
+      const res = await fetch(`${API_BASE}/history?limit=500`);
       if (!res.ok) throw new Error('Failed to fetch history');
       const data = await res.json();
-      setHistory(Array.isArray(data) ? data : data.uploads || []);
+      const items = data.uploads || [];
+
+      setRecent(items.slice(0, 5));
+
+      const pubCount = items.filter((i) => ['complete', 'processed', 'published'].includes(i.status)).length;
+      const drfCount = items.filter((i) => ['draft', 'validated', 'pending'].includes(i.status)).length;
+      const issCount = items.filter((i) => ['failed', 'issues', 'error'].includes(i.status)).length;
+      const last = items.length > 0 ? items[0] : null;
+
+      setStats({
+          published: pubCount,
+          drafts: drfCount,
+          issues: issCount,
+          lastFile: last?.filename || '—',
+          lastTime: last?.created_at || last?.date || null,
+      });
     } catch (err) {
-      showToast(err.message || 'Failed to load dashboard data', 'error');
-      setHistory([]);
+      showToast(err.message || 'Dashboard fetch failed', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchHistory(); }, []);
-
-  const publishedCount = history.filter((h) => h.status === 'published' || h.status === 'passed').length;
-  const draftsCount = history.filter((h) => h.status === 'draft').length;
-  const issuesCount = history.filter((h) => h.status === 'issues' || h.status === 'failed').length;
-
-  const lastUploadDate = history.length > 0
-    ? relativeDate(history.reduce((latest, h) => {
-        const d = new Date(h.created_at || h.date || 0);
-        return d > latest ? d : latest;
-      }, new Date(0)).toISOString())
-    : 'Never';
+  useEffect(() => { fetchDashboardData(); }, []);
 
   const handleDownload = async (item) => {
     try {
@@ -63,7 +68,7 @@ export default function DashboardScreen() {
     try {
       const res = await fetch(`${API_BASE}/history/${item.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
-      setHistory((prev) => prev.filter((h) => h.id !== item.id));
+      setRecent((prev) => prev.filter((h) => h.id !== item.id));
       showToast('Upload deleted', 'success');
     } catch (err) {
       showToast(err.message || 'Delete failed', 'error');
@@ -107,9 +112,7 @@ export default function DashboardScreen() {
     },
   ];
 
-  const recentUploads = [...history]
-    .sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0))
-    .slice(0, 10);
+  const recentUploads = recent;
 
   return (
     <div id="dashboard-screen">
@@ -134,25 +137,25 @@ export default function DashboardScreen() {
             <StatCard
               icon="📄"
               label="Pages Published"
-              value={publishedCount}
+              value={stats?.published || 0}
               color="green"
             />
             <StatCard
               icon="📝"
               label="Drafts Pending"
-              value={draftsCount}
+              value={stats?.drafts || 0}
               color="yellow"
             />
             <StatCard
               icon="⚠️"
               label="Files with Issues"
-              value={issuesCount}
+              value={stats?.issues || 0}
               color="red"
             />
             <StatCard
               icon="🕐"
               label="Last Upload"
-              value={lastUploadDate}
+              value={stats?.lastTime ? relativeDate(stats.lastTime) : 'Never'}
               color="blue"
             />
           </div>

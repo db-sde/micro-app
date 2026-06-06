@@ -58,19 +58,28 @@ export default function ValidationScreen() {
   const location = useLocation();
   const [data, setData] = useState(location.state?.uploadData || null);
   const [loading, setLoading] = useState(!data);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (data) return;
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Fetch the full upload record from history + payload
-        const res = await fetch(`${API_BASE}/download/${uploadId}`);
+        setError(null);
+        // Backend does not have a GET /jobs/:id endpoint.
+        // We use POST /confirm/:id with empty corrections to fetch the validation details.
+        const res = await fetch(`${API_BASE}/confirm/${uploadId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ corrections: [] })
+        });
         if (!res.ok) throw new Error('Failed to load validation data');
         const json = await res.json();
+        console.log('[ValidationScreen] raw job data:', json);
         setData(json);
       } catch (err) {
-        showToast(err.message, 'error');
+        console.error('[ValidationScreen] fetch failed:', err);
+        setError(err.message);
       } finally {
         setLoading(false);
       }
@@ -104,10 +113,33 @@ export default function ValidationScreen() {
 
   if (loading) {
     return (
-      <div id="validation-screen">
-        <TopBar title="Validation" />
-        <StepIndicator currentStep={3} />
+      <div id="validation-screen" style={{ padding: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
         <LoadingSpinner message="Loading validation results…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div id="validation-screen" style={{ padding: 32 }}>
+        <div style={{ background: '#FCEBEB', border: '1px solid #F09595', borderRadius: 8, padding: '16px 20px', color: '#A32D2D' }}>
+          <strong>Could not load validation data</strong><br />
+          <span style={{ fontSize: 13 }}>{error}</span><br />
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>Job ID: {uploadId}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || !data.field_mappings || data.field_mappings.length === 0) {
+    return (
+      <div id="validation-screen" style={{ padding: 32 }}>
+        <div style={{ background: '#F3F4F6', borderRadius: 8, padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+          No field data found for job {uploadId}.<br />
+          <span style={{ fontSize: 12 }}>
+            The pipeline may still be processing, or this job has no mapped fields.
+          </span>
+        </div>
       </div>
     );
   }

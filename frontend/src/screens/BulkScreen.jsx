@@ -15,6 +15,7 @@ export default function BulkScreen() {
   const [jobId, setJobId] = useState(null);
   const [progress, setProgress] = useState(null);
   const [fileCount, setFileCount] = useState(null);
+  const [error, setError] = useState(null);
   const pollRef = useRef(null);
 
   const handleFileDrop = (f) => {
@@ -57,13 +58,13 @@ export default function BulkScreen() {
 
       const data = await res.json();
       setJobId(data.job_id || data.id);
-      setFileCount(data.file_count || data.total || null);
+      setFileCount(data.total_files || data.total || null);
       showToast('Bulk processing started!', 'success');
 
       // Start polling
       startPolling(data.job_id || data.id);
     } catch (err) {
-      showToast(err.message, 'error');
+      setError(err.message);
       setProcessing(false);
     }
   };
@@ -101,10 +102,10 @@ export default function BulkScreen() {
     };
   }, []);
 
-  const processed = progress?.processed || 0;
-  const total = progress?.total || fileCount || 0;
+  const processed = progress?.processed_files || 0;
+  const total = progress?.total_files || fileCount || 0;
   const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
-  const files = progress?.files || [];
+  const files = progress?.results || [];
 
   return (
     <div id="bulk-screen">
@@ -113,6 +114,25 @@ export default function BulkScreen() {
       {!jobId ? (
         <div className="card" style={{ maxWidth: 680, margin: '0 auto' }}>
           <div className="card-body">
+            {error && (
+                <div style={{
+                    background: '#FCEBEB', border: '1px solid #F09595', borderRadius: 8,
+                    padding: '12px 16px', marginBottom: 16,
+                    display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#A32D2D'
+                }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A32D2D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    {error}
+                    <button onClick={() => setError(null)}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none',
+                                 cursor: 'pointer', color: '#A32D2D', fontSize: 13 }}>
+                        Dismiss
+                    </button>
+                </div>
+            )}
             <DropZone
               onFileDrop={handleFileDrop}
               accept=".zip"
@@ -249,7 +269,7 @@ export default function BulkScreen() {
                         </td>
                         <td>
                           <span style={{ fontFamily: 'var(--font-code)', fontWeight: 600 }}>
-                            {f.score != null ? `${Math.round(f.score)}%` : '—'}
+                            {f.quality_score != null ? `${Math.round(f.quality_score)}%` : '—'}
                           </span>
                         </td>
                         <td>
@@ -283,6 +303,7 @@ export default function BulkScreen() {
                   setProgress(null);
                   setFile(null);
                   setFileCount(null);
+                  setError(null);
                   setProcessing(false);
                 }}
                 id="btn-bulk-reset"
