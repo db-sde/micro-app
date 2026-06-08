@@ -77,14 +77,24 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
         # fall back to raw_tag itself when the writer put only a tag with no body
         display = m.group(2).strip() or raw_tag
 
-        if tag in valid_acf_fields:
+        # Handle comma-separated tags (e.g., [about_heading,about_content])
+        # We pick the first valid field that is NOT a _heading field
+        chosen_tag = tag
+        if "," in tag:
+            parts = [p.strip() for p in tag.split(",")]
+            for p in parts:
+                if p in valid_acf_fields and not p.endswith("_heading"):
+                    chosen_tag = p
+                    break
+
+        if chosen_tag in valid_acf_fields:
             logger.info(
                 "TAGGED [T1]: heading=%r → field=%s (direct, no embedding)",
-                heading, tag,
+                heading, chosen_tag,
             )
             return {
                 "route":         "direct",
-                "field_key":     tag,
+                "field_key":     chosen_tag,
                 "display":       display,
                 "embed_heading": None,   # Tier 1 never embeds
                 "tag_found":     raw_tag,

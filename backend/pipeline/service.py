@@ -215,7 +215,8 @@ def run_extraction_pipeline(
             sections_for_embedding[heading] = section_data
             continue
 
-        result = classify_heading(heading, VALID_ACF_FIELDS)
+        original_heading = section_data.get("original_heading", heading)
+        result = classify_heading(original_heading, VALID_ACF_FIELDS)
         section_data["classification"] = result
         section_data["display_heading"] = result["display"]
 
@@ -287,6 +288,66 @@ def run_extraction_pipeline(
                 "status": "mapped",
                 "source": "ENRICHED",
             })
+
+    # ── Step 5.5: Auto-populate paired _heading fields ──
+    # Since _heading fields are excluded from embedding, we populate them
+    # automatically using the document heading that mapped to their content counterpart.
+    HEADING_PAIRS = {
+        "about_heading": "about_content",
+        "why_choose_heading": "why_choose_content",
+        "facts_heading": "facts",
+        "accreditations_heading": "accreditations",
+        "programs_heading": "programs_table",
+        "admission_heading": "admission_steps",
+        "emi_heading": "emi_content",
+        "exam_heading": "exam_content",
+        "faculty_heading": "faculty_members",
+        "placement_heading": "placement_content",
+        "reviews_heading": "reviews",
+        "faqs_heading": "faqs",
+        "highlights_heading": "highlights",
+        "specializations_heading": "specializations_intro",
+        "fee_heading": "fee_plans",
+        "eligibility_heading": "eligibility_content",
+        "syllabus_heading": "syllabus_content",
+        "jobs_heading": "job_profiles",
+        "certificate_heading": "certificate_description",
+        "other_specs_heading": "other_specs",
+    }
+    
+    # Create a quick lookup of field_key -> heading_in_doc from mapping_records
+    content_source_map = {
+        r["field_key"]: r["heading_in_doc"] 
+        for r in mapping_records 
+        if r["status"] == "mapped"
+    }
+
+    for heading_field, content_field in HEADING_PAIRS.items():
+        # Check if this heading field is actually valid for the current page_type
+        if get_field_type(heading_field, detected_type) == 'text':
+            # If the paired content field was mapped successfully, steal its heading
+            if content_field in content_source_map and payload.get(content_field) is not None:
+                doc_heading_key = content_source_map[content_field]
+                
+                # Retrieve the clean, properly-cased display heading from section_map
+                # Fallback to doc_heading_key if for some reason it's missing or enriched
+                if doc_heading_key in section_map and "display_heading" in section_map[doc_heading_key]:
+                    clean_heading = section_map[doc_heading_key]["display_heading"]
+                else:
+                    # Strip out [enriched] markers if it came from enrichment
+                    clean_heading = doc_heading_key.split("[enriched from")[0].strip()
+
+                if clean_heading:
+                    payload[heading_field] = clean_heading
+                    mapping_records.append({
+                        "field_key": heading_field,
+                        "heading_in_doc": doc_heading_key,
+                        "value": clean_heading,
+                        "confidence": 1.0,
+                        "status": "mapped",
+                        "source": "AUTO",
+                    })
+                    logger.info("AUTO_HEADING: %s = %r", heading_field, clean_heading)
 
     # ── Step 6: Validate ──
     validation = validate_payload(payload, detected_type)

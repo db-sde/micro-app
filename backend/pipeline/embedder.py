@@ -33,7 +33,10 @@ _initialized: bool = False
 
 _ALL_FIELDS: dict[str, dict[str, str]] = {}
 for page_type, fields_list in ACF_FIELDS.items():
-    _ALL_FIELDS[page_type] = {f["key"]: f["embed"] for f in fields_list}
+    _ALL_FIELDS[page_type] = {
+        f["key"]: f["embed"] for f in fields_list
+        if not f["key"].endswith("_heading")
+    }
 
 
 # ────────────────────────── helpers ──────────────────────────
