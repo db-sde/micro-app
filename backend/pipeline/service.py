@@ -592,64 +592,72 @@ def _route_headings(
     return assignments
 
 
+import concurrent.futures
+
 def _extract_assignments(
     assignments: dict[str, dict[str, Any]],
     page_type: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Pass 2 — extract content for each assigned field.
+    """Pass 2 — extract content for each assigned field concurrently.
 
     Returns ``(payload, mapping_records)``.
-
-    Because extraction happens *after* all routing decisions are final,
-    each field is extracted exactly once — no wasted API calls from
-    duplicate headings.
     """
     payload: dict[str, Any] = {}
     mapping_records: list[dict[str, Any]] = []
 
-    for chosen_field, assignment in assignments.items():
+    def _do_extract(chosen_field: str, assignment: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
         ft = get_field_type(chosen_field, page_type)
         heading = assignment["heading"]
         content = assignment["content"]
-        confidence = assignment["confidence"]
-        source = assignment["source"]
-
+        
         try:
             extracted = extract_field(chosen_field, ft, content)
         except Exception as exc:
             logger.warning("extract_field(%s) failed: %s", chosen_field, exc)
             extracted = {"value": None, "error": str(exc)}
+            
+        return chosen_field, assignment, extracted
 
-        value = extracted.get("value")
-        payload[chosen_field] = value
-        logger.info("EXTRACTED: %s = %s", chosen_field, repr(value)[:200])
+    # Run extractions concurrently (Anthropic handles this beautifully)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+        future_to_field = {
+            executor.submit(_do_extract, field, assign): field
+            for field, assign in assignments.items()
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_field):
+            chosen_field, assignment, extracted = future.result()
+            
+            value = extracted.get("value")
+            payload[chosen_field] = value
+            logger.info("EXTRACTED: %s = %s", chosen_field, repr(value)[:200])
 
-        # Serialise non-string values for DB storage
-        db_value = value
-        if value is not None and not isinstance(value, str):
-            db_value = json.dumps(value, ensure_ascii=False)
+            # Serialise non-string values for DB storage
+            db_value = value
+            if value is not None and not isinstance(value, str):
+                db_value = json.dumps(value, ensure_ascii=False)
 
-        # Format source for frontend display
-        display_source = source.upper()
-        if source == "tagged":
-            display_source = "TAGGED"
-        elif source == "ai":
-            display_source = "AI"
-        elif source.startswith("embedding"):
-            display_source = "EMBED"
-        elif source == "enrichment":
-            display_source = "ENRICHED"
-        elif source == "kv_parser":
-            display_source = "KV"
+            source = assignment["source"]
+            confidence = assignment.get("confidence", 1.0)
+            display_source = source.upper()
+            if source == "tagged":
+                display_source = "TAGGED"
+            elif source == "ai":
+                display_source = "AI"
+            elif source.startswith("embedding"):
+                display_source = "EMBED"
+            elif source == "enrichment":
+                display_source = "ENRICHED"
+            elif source == "kv_parser":
+                display_source = "KV"
 
-        mapping_records.append({
-            "field_key": chosen_field,
-            "heading_in_doc": heading,
-            "value": db_value,
-            "confidence": confidence,
-            "status": "mapped" if value is not None else "missing",
-            "source": display_source,
-        })
+            mapping_records.append({
+                "field_key": chosen_field,
+                "heading_in_doc": assignment["heading"],
+                "value": db_value,
+                "confidence": confidence,
+                "status": "mapped" if value is not None else "missing",
+                "source": display_source,
+            })
 
     return payload, mapping_records
-
