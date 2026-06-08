@@ -274,6 +274,8 @@ export function DropZone({ onFileDrop, accept, label, sublabel, multiple = false
         accept={accept}
         multiple={multiple}
         onChange={handleChange}
+        onClick={(e) => e.stopPropagation()}
+        style={{ display: 'none' }}
         tabIndex={-1}
       />
       <div className="dropzone-icon" aria-hidden="true">
@@ -560,8 +562,7 @@ export function Modal({ isOpen, onClose, title, children }) {
 export function StepIndicator({ currentStep }) {
   const steps = [
     { num: 1, label: 'Upload' },
-    { num: 2, label: 'Images' },
-    { num: 3, label: 'Validation' },
+    { num: 2, label: 'Validation' },
   ];
 
   return (

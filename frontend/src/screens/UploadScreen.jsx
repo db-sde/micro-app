@@ -55,7 +55,7 @@ export default function UploadScreen() {
       const data = await res.json();
       const uploadId = data.upload_id || data.id;
       showToast('Document parsed successfully!', 'success');
-      navigate(`/upload/${uploadId}/images`, { state: { uploadData: data } });
+      navigate(`/upload/${uploadId}/validation`, { state: { uploadData: data } });
     } catch (err) {
       setError(err.message);
       showToast(err.message || 'Upload failed', 'error');

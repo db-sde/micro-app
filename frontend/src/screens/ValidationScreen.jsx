@@ -29,7 +29,11 @@ function buildFieldRows(uploadData) {
     const value = uploadData.payload?.[fr.field_key];
     let charCount = 0;
     let preview = '—';
-    if (typeof value === 'string') {
+    const isSkipped = ['hero_image', 'linked_university', 'linked_course'].includes(fr.field_key);
+
+    if (isSkipped) {
+      preview = 'Set manually in WordPress';
+    } else if (typeof value === 'string') {
       charCount = value.length;
       preview = value.length > 100 ? value.slice(0, 100) + '…' : value;
     } else if (Array.isArray(value)) {
@@ -43,10 +47,10 @@ function buildFieldRows(uploadData) {
 
     return {
       field_key: fr.field_key,
-      status: fr.status || mapping.status || 'missing',
+      status: isSkipped ? 'skipped' : (fr.status || mapping.status || 'missing'),
       heading_in_doc: mapping.heading_in_doc || '—',
-      source: mapping.source || '—',
-      confidence: mapping.confidence || 0,
+      source: isSkipped ? 'manual' : (mapping.source || '—'),
+      confidence: isSkipped ? 0 : (mapping.confidence || 0),
       preview,
       charCount,
     };
@@ -165,7 +169,7 @@ export default function ValidationScreen() {
         </Link>
       </TopBar>
 
-      <StepIndicator currentStep={3} />
+      <StepIndicator currentStep={2} />
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>

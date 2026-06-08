@@ -18,7 +18,7 @@ from typing import Any
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from schemas import FIELDS_BY_TYPE, FIELD_TYPES_BY_TYPE
+from acf.fields import ACF_FIELDS, get_field_type
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -71,21 +71,32 @@ RETURN FORMAT — always return valid JSON, nothing else:
 {"value": <extracted value>}
 
 No preamble. No explanation. No markdown fences. Raw JSON only.
+
+REPEATER STRUCTURES — For JSON array fields, use exactly these sub-field keys:
+facts:            [{"fact_title": "...", "fact_description": "..."}]
+accreditations:   [{"body_name": "NAAC", "body_descriptor": "A+ Grade", "body_detail": "Ranked top 10"}]
+programs_table:   [{"program_name": "MBA", "program_fee": "₹45,000/-", "program_eligibility": "Bachelor's degree"}]
+faculty_members:  [{"member_name": "Dr. Name", "member_program": "MBA", "member_designation": "Professor", "member_qualification": "Ph.D."}]
+highlights:       [{"highlight_title": "Industry Mentors", "highlight_description": "Learn from CXOs"}]
+fee_plans:        [{"plan_name": "Semester Plan", "plan_amount": "₹25,000", "plan_total": "₹1,00,000"}]
+other_specs:      [{"other_spec_name": "Finance", "other_spec_fee": "₹1,75,000"}]
+job_profiles:     [{"job_title": "Business Analyst", "avg_salary": "INR 5 LPA"}]
+reviews:          [{"review_text": "Great experience...", "reviewer_label": "MBA Graduate, 2024"}]
+faqs:             [{"question": "Is the degree valid?", "answer": "Yes, UGC entitled."}]
 """
 
 # ────────────────────────── stat question map ──────────────────────────
 
 STAT_QUESTIONS: dict[str, str] = {
-    "stat_students": "How many total students are enrolled?",
-    "stat_alumni": "How many alumni does the university have?",
-    "stat_hiring_partners": "How many hiring/placement partners?",
-    "stat_years": "How many years of excellence/experience?",
-    "stat_programs": "How many programs/courses are offered?",
+    "established_year": "In what year was the university established?",
+    "cdoe_year": "In what year was the CDOE/distance education department started?",
+    "naac_grade": "What is the NAAC grade or score?",
+    "starting_fee": "What is the starting fee or minimum fee?",
+    "num_programs": "How many total programs or courses are offered?",
+    "num_specializations": "How many specializations or tracks are available?",
     "duration": "What is the course duration?",
     "total_fee": "What is the total course fee?",
     "emi_amount": "What is the monthly EMI amount?",
-    "spec_total_fee": "What is the total specialization fee?",
-    "spec_emi": "What is the monthly EMI for this specialization?",
 }
 
 # ────────────────────────── field extraction hints ──────────────────────────
@@ -93,22 +104,11 @@ STAT_QUESTIONS: dict[str, str] = {
 # Field-specific extraction instructions prepended to the content.
 # The LLM sees these regardless of which extraction function is called.
 FIELD_EXTRACTION_HINTS: dict[str, str] = {
-    "placement_partners": (
-        "IMPORTANT: Extract ONLY company/organisation names. "
-        "Look for proper nouns — names like Amazon, TCS, Infosys, DishTV, CMC Limited. "
-        "IGNORE support services text like 'resume building', 'interview prep', 'career guidance'. "
-        "Return a JSON array of strings: each string is one company name."
-    ),
     "specializations": (
         "IMPORTANT: Extract the list of specialization/track names. "
         "These are proper noun phrases like 'Marketing', 'Finance', 'Human Resource Management', "
         "'Healthcare and Hospital Administration'. "
         "Return a JSON array of strings: each string is one specialization name."
-    ),
-    "course_facts": (
-        "Extract key facts or highlights about the course. "
-        "Each fact should be a complete, meaningful sentence or bullet point. "
-        "Return a JSON array of strings."
     ),
     "faqs": (
         "Extract question-answer pairs from the content. "
@@ -120,15 +120,6 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
         "Extract individual student reviews or testimonials as separate items. "
         "Each paragraph is typically one review. "
         "Return a JSON array of strings, each string is one review."
-    ),
-    "job_roles": (
-        "Extract job role names and associated salary information. "
-        "Each row should be one job role with its average salary if available. "
-        "Return a JSON array of objects."
-    ),
-    "spec_about": (
-        "Extract a comprehensive overview/description of the specialization. "
-        "Format as clean HTML paragraphs."
     ),
 }
 
@@ -418,7 +409,7 @@ def confirm_mapping(
 
     Returns ``{"confirmed": bool, "field_key": str, "reason": str}``.
     """
-    fields_desc = FIELDS_BY_TYPE.get(page_type, {})
+    fields_desc = {f["key"]: f["embed"] for f in ACF_FIELDS.get(page_type, [])}
     field_desc = fields_desc.get(candidate_field, candidate_field)
     text_block = _content_to_text(content)
     preview = text_block[:500]
@@ -464,7 +455,7 @@ def resolve_ambiguous(
 
     Returns ``{"field_key": str, "confidence": float, "reason": str}``.
     """
-    fields_desc = FIELDS_BY_TYPE.get(page_type, {})
+    fields_desc = {f["key"]: f["embed"] for f in ACF_FIELDS.get(page_type, [])}
     text_block = _content_to_text(content)
     preview = text_block[:500]
 

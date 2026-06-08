@@ -34,7 +34,8 @@ from pipeline.enricher import enrich_payload
 from pipeline.validator import validate_payload
 from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text
 from pipeline.classifier import classify_heading, VALID_ACF_FIELDS
-from schemas import FIELD_TYPES_BY_TYPE
+from pipeline.formatter import build_json_output
+from acf.fields import get_field_type
 
 logger = logging.getLogger("degreebaba.pipeline")
 
@@ -236,7 +237,7 @@ def run_extraction_pipeline(
     # ── Step 3: Match headings → fields ──
     initialize_field_index()
     matches = match_headings_to_fields(sections_for_embedding, detected_type)
-    field_types = FIELD_TYPES_BY_TYPE.get(detected_type, {})
+    # field types are now looked up per-key using get_field_type
 
     # ── Step 4: Two-pass score routing + extraction ──
     #   Pass 1 — choose best field per heading, resolve duplicates
@@ -258,7 +259,7 @@ def run_extraction_pipeline(
     )
 
     #   Pass 2 — extract content for each assigned field (Claude calls)
-    payload, mapping_records = _extract_assignments(assignments, field_types)
+    payload, mapping_records = _extract_assignments(assignments, detected_type)
 
     # ── Merge KV pre-pass results (fills gaps not covered by LLM) ──
     for fkey, fval in kv_payload.items():
@@ -307,13 +308,17 @@ def run_extraction_pipeline(
         validation["summary"]["missing"],
     )
 
+    # ── Step 6.5: Format final payload ──
+    validated_fields = [{"field_key": k, "value": v} for k, v in payload.items()]
+    final_payload = build_json_output(validated_fields, filename, detected_type)
+
     # ── Step 7: Persist ──
     upload = Upload(
         filename=filename,
         page_type=detected_type,
         status="processed",
         score=quality_score,
-        payload=json.dumps(payload, ensure_ascii=False),
+        payload=json.dumps(final_payload, ensure_ascii=False),
     )
     db.add(upload)
     db.flush()  # get upload.id
@@ -335,7 +340,7 @@ def run_extraction_pipeline(
         "upload_id": upload.id,
         "filename": filename,
         "page_type": detected_type,
-        "payload": payload,
+        "payload": final_payload,
         "validation": validation,
         "field_mappings": [
             {
@@ -528,7 +533,7 @@ def _route_headings(
 
 def _extract_assignments(
     assignments: dict[str, dict[str, Any]],
-    field_types: dict[str, str],
+    page_type: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Pass 2 — extract content for each assigned field.
 
@@ -542,7 +547,7 @@ def _extract_assignments(
     mapping_records: list[dict[str, Any]] = []
 
     for chosen_field, assignment in assignments.items():
-        ft = field_types.get(chosen_field, "wysiwyg")
+        ft = get_field_type(chosen_field, page_type)
         heading = assignment["heading"]
         content = assignment["content"]
         confidence = assignment["confidence"]

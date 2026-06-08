@@ -9,47 +9,68 @@ Returns a validation report with:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from schemas import REQUIRED_BY_TYPE, FIELD_TYPES_BY_TYPE
+from acf.fields import ACF_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type
 
+SHORT_OK_FIELDS = {
+    'university_name', 'university_full_name', 'established_year', 'cdoe_year',
+    'naac_grade', 'ugc_approved', 'ugc_status', 'mode_of_learning', 'mode',
+    'starting_fee', 'total_fee', 'num_programs', 'num_specializations',
+    'duration', 'validity', 'emi_amount', 'admission_fee_note',
+    'programs_intro', 'specializations_intro', 'eligibility_summary',
+    'certificate_description', 'faculty_intro',
+    'seo_title', 'meta_description',
+    # All heading fields
+    'about_heading', 'why_choose_heading', 'facts_heading', 'accreditations_heading',
+    'programs_heading', 'admission_heading', 'emi_heading', 'exam_heading',
+    'faculty_heading', 'placement_heading', 'reviews_heading', 'faqs_heading',
+    'highlights_heading', 'specializations_heading', 'fee_heading',
+    'eligibility_heading', 'syllabus_heading', 'placement_heading',
+    'jobs_heading', 'certificate_heading', 'other_specs_heading',
+}
+
+def get_field_status(field_key: str, value: Any, field_type: str, word_count: int) -> str:
+    if field_key in SKIP_EXTRACTION_FIELDS:
+        return 'skipped'    # not missing — just not extractable from Word
+    if value is None or value == '' or value == [] or value == {}:
+        return 'missing'
+    if field_type in ('html', 'textarea', 'text') and word_count < 30:
+        if field_key not in SHORT_OK_FIELDS:
+            return 'thin'
+    return 'mapped'
 
 def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
-    """Validate the extracted payload and return a quality report.
-
-    Parameters
-    ----------
-    payload : dict
-        Mapping of field_key → extracted value.
-    page_type : str
-        One of ``"university"``, ``"course"``, ``"specialization"``.
-
-    Returns
-    -------
-    dict
-        ``{"summary": {…}, "field_report": [{…}, …]}``
-    """
-    required_fields = REQUIRED_BY_TYPE.get(page_type, [])
-    field_types = FIELD_TYPES_BY_TYPE.get(page_type, {})
+    """Validate the extracted payload and return a quality report."""
+    fields_list = ACF_FIELDS.get(page_type, [])
+    # We validate all fields listed in ACF_FIELDS for this page_type
+    required_fields = [f['key'] for f in fields_list]
     total_required = len(required_fields)
 
     mapped = 0
     thin = 0
     missing = 0
+    skipped = 0
     field_report: list[dict[str, Any]] = []
 
     for field_key in required_fields:
         value = payload.get(field_key)
-        ft = field_types.get(field_key, "wysiwyg")
+        ft = get_field_type(field_key, page_type)
+        
+        word_count = 0
+        if value:
+            word_count = len(str(value).split())
 
-        if value is None or field_key not in payload:
-            status = "missing"
+        status = get_field_status(field_key, value, ft, word_count)
+
+        if status == 'missing':
             missing += 1
-        elif _is_thin(value, ft):
-            status = "thin"
+        elif status == 'thin':
             thin += 1
+        elif status == 'skipped':
+            skipped += 1
         else:
-            status = "mapped"
             mapped += 1
 
         field_report.append(
@@ -62,10 +83,12 @@ def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
         )
 
     # Quality score: mapped counts 1.0, thin counts 0.5, missing counts 0
+    # Skipped fields should NOT lower the quality score. They are just ignored in denominator.
     quality_score = 0.0
-    if total_required > 0:
+    effective_total = total_required - skipped
+    if effective_total > 0:
         quality_score = round(
-            (mapped * 1.0 + thin * 0.5) / total_required * 100, 2
+            (mapped * 1.0 + thin * 0.5) / effective_total * 100, 2
         )
 
     return {
@@ -81,32 +104,6 @@ def validate_payload(payload: dict[str, Any], page_type: str) -> dict[str, Any]:
 
 
 # ────────────────────────── helpers ──────────────────────────
-
-
-def _is_thin(value: Any, field_type: str = "wysiwyg") -> bool:
-    """Return True if *value* exists but is too small to be useful.
-
-    Thresholds are field-type aware:
-
-    * **text / stat**: minimum 3 characters (short values are expected)
-    * **wysiwyg**:     minimum 80 characters (rich content expected)
-    * **bullet**:      minimum 2 items
-    * **table / faq**:  minimum 1 row / item
-    """
-    if isinstance(value, str):
-        if field_type in ("text", "stat"):
-            return len(value.strip()) < 3
-        return len(value.strip()) < 80
-    if isinstance(value, list):
-        return len(value) < 2
-    if isinstance(value, dict):
-        # A dict with only a "value" key whose content is thin
-        inner = value.get("value")
-        if inner is not None:
-            return _is_thin(inner, field_type)
-        return False
-    # Numbers, booleans, etc. — not thin
-    return False
 
 
 def _preview(value: Any, max_len: int = 120) -> str | None:

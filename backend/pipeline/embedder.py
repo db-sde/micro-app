@@ -17,9 +17,7 @@ import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from schemas.university import UNIVERSITY_FIELDS
-from schemas.course import COURSE_FIELDS
-from schemas.specialization import SPECIALIZATION_FIELDS
+from acf.fields import ACF_FIELDS
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -33,11 +31,9 @@ _MODEL = "text-embedding-3-large"
 _field_index: dict[str, dict[str, dict[str, Any]]] = {}
 _initialized: bool = False
 
-_ALL_FIELDS: dict[str, dict[str, str]] = {
-    "university": UNIVERSITY_FIELDS,
-    "course": COURSE_FIELDS,
-    "specialization": SPECIALIZATION_FIELDS,
-}
+_ALL_FIELDS: dict[str, dict[str, str]] = {}
+for page_type, fields_list in ACF_FIELDS.items():
+    _ALL_FIELDS[page_type] = {f["key"]: f["embed"] for f in fields_list}
 
 
 # ────────────────────────── helpers ──────────────────────────

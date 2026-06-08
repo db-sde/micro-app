@@ -43,7 +43,6 @@ from pipeline.embedder import match_headings_to_fields, initialize_field_index
 from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.validator import validate_payload
 from pipeline.service import run_extraction_pipeline
-from schemas import FIELD_TYPES_BY_TYPE
 
 # ────────────────────────── logging ──────────────────────────
 
@@ -323,7 +322,6 @@ async def confirm_fields(
 
     # Parse the original file to get section content
     # We'll work with field mappings in the DB
-    field_types = FIELD_TYPES_BY_TYPE.get(upload.page_type or "university", {})
 
     for correction in body.corrections:
         fk = correction.field_key

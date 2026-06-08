@@ -115,20 +115,7 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
     }
 
 
-def get_all_valid_field_keys() -> set[str]:
-    """Return the union of all valid ACF field keys across all page types.
-
-    Built once at import time; the returned set is shared across all calls.
-    Used to validate ``[tags]`` in document headings.
-
-    Field keys come from the schema modules and are already lowercase
-    underscore-delimited strings (e.g. ``'course_name'``, ``'faqs'``).
-    """
-    from schemas import FIELDS_BY_TYPE
-    keys: set[str] = set()
-    for fields_dict in FIELDS_BY_TYPE.values():
-        keys.update(fields_dict.keys())
-    return keys
+from acf.fields import get_all_valid_field_keys
 
 
 # ── Module-level cache — built once, reused for all files ──────────────────

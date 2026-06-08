@@ -71,20 +71,9 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Mode of delivery
     (r"mode\s*(?:of\s*)?(?:learning|study|education|delivery|teaching)",
                                                               "mode_of_learning"),
-    # Student count
-    (r"(?:total\s*)?student(?:s)?\s*(?:strength|count|number|base|communit)",
-                                                              "stat_students"),
-    # Alumni
-    (r"alumni|graduate(?:s)?|pass(?:ed|out)",                 "stat_alumni"),
-    # Hiring / placement partners count (stat, not list)
-    (r"(?:total\s*)?(?:hiring|placement|corporate)\s*partner(?:s)?(?:\s*count)?",
-                                                              "stat_hiring_partners"),
     # Program count stat
     (r"(?:total\s*)?(?:programs?|courses?)\s*(?:offered|available|count)",
-                                                              "stat_programs"),
-    # Faculty stat
-    (r"(?:total\s*)?facult(?:y|ies)\s*(?:count|number|members?)?",
-                                                              "stat_faculty"),
+                                                              "num_programs"),
     # NAAC grade specifically
     (r"naac\s*(?:grade|rating|score)|grade",                  "naac_grade"),
     # Ranking
@@ -107,7 +96,7 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"exam(?:ination)?|assessment|evaluation|grading",       "exam_pattern"),
     # Specializations count (stat)
     (r"(?:total\s*)?specialization(?:s)?\s*(?:offered|count|available)",
-                                                              "stat_programs"),
+                                                              "num_specializations"),
 ]
 
 # Optional value extractors for fields where we can do better than raw text
@@ -117,8 +106,8 @@ _VALUE_EXTRACTORS: dict[str, re.Pattern[str]] = {
     "total_fee":        re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+(?:\s*/\-)?"),
     "duration":         re.compile(r"\d+\s*(?:year|month|semester)s?", re.IGNORECASE),
     "emi_amount":       re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+", re.IGNORECASE),
-    "stat_students":    re.compile(r"[\d,]+\s*[Kk+]*", re.IGNORECASE),
-    "stat_programs":    re.compile(r"\d+\s*\+?"),
+    "num_programs":         re.compile(r"\d+\s*\+?"),
+    "num_specializations":  re.compile(r"\d+\s*\+?"),
 }
 
 
