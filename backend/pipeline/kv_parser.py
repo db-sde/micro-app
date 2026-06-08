@@ -63,8 +63,16 @@ def looks_like_kv_section(raw_text: str) -> bool:
 # Each pattern is a SEMANTIC concept, not institution-specific wording.
 # Ordered: more specific patterns first.
 _KV_FIELD_MAP: list[tuple[str, str]] = [
-    # Approvals / accreditations (before generic "naac" entry)
-    (r"approval|ugc|naac|aicte|recogni|accredit|certif",     "accreditations"),
+    # University Full Name
+    (r"university\s*full\s*name|full\s*name", "university_full_name"),
+    # CDOE Year
+    (r"cdoe(?:\s*year)?", "cdoe_year"),
+    # UGC Approval specifically
+    (r"ugc", "ugc_approved"),
+    # NAAC grade specifically
+    (r"naac\s*(?:grade|rating|score)?|grade", "naac_grade"),
+    # Approvals / accreditations (excluding UGC/NAAC which are caught above)
+    (r"approval|aicte|recogni|accredit|certif", "accreditations"),
     # Establishment
     (r"establish|found(?:ed|ing)|inception|since\s*(?:19|20)\d{2}",
                                                               "established_year"),
@@ -72,7 +80,7 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"mode\s*(?:of\s*)?(?:learning|study|education|delivery|teaching)",
                                                               "mode_of_learning"),
     # Program count stat
-    (r"(?:total\s*)?(?:programs?|courses?)\s*(?:offered|available|count)",
+    (r"(?:total\s*|number\s*of\s*)?(?:programs?|courses?)(?:\s*(?:offered|available|count))?",
                                                               "num_programs"),
     # NAAC grade specifically
     (r"naac\s*(?:grade|rating|score)|grade",                  "naac_grade"),
@@ -81,6 +89,8 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Campus / location
     (r"campus(?:es)?|location(?:s)?|headquarter|head\s*office",
                                                               "campus_location"),
+    # Starting fee
+    (r"starting\s*fee",                                       "starting_fee"),
     # Fee / cost
     (r"(?:total\s*)?(?:course|program)?\s*fee(?:s)?|total\s*cost|tuition",
                                                               "total_fee"),
@@ -95,7 +105,7 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Exam / assessment
     (r"exam(?:ination)?|assessment|evaluation|grading",       "exam_pattern"),
     # Specializations count (stat)
-    (r"(?:total\s*)?specialization(?:s)?\s*(?:offered|count|available)",
+    (r"(?:total\s*|number\s*of\s*)?specialization(?:s)?(?:\s*(?:offered|count|available))?",
                                                               "num_specializations"),
 ]
 
