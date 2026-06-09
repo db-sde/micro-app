@@ -70,6 +70,7 @@ return {"value": null}.
 RETURN FORMAT — always return valid JSON, nothing else:
 {"value": <extracted value>}
 
+CRITICAL: You must properly escape all double quotes (\\") inside string values to ensure the output is valid JSON.
 No preamble. No explanation. No markdown fences. Raw JSON only.
 
 REPEATER STRUCTURES — For JSON array fields, use exactly these sub-field keys:
@@ -120,6 +121,15 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
         "Extract individual student reviews or testimonials as separate items. "
         "Each paragraph is typically one review. "
         "Return a JSON array of strings, each string is one review."
+    ),
+    "admission_fee_note": (
+        "IMPORTANT: Find the specific line, step, or sentence that mentions paying the application fee, "
+        "registration fee, or program fee. Extract only that sentence or step as the admission fee note. "
+        "Even if it is just a numbered step (e.g. 'Step 5. Pay the required fee...'), extract it."
+    ),
+    "faculty_intro": (
+        "IMPORTANT: Extract the introductory text/paragraph that appears before the faculty table. "
+        "Ignore the table completely. Return ONLY the introductory text."
     ),
 }
 
@@ -213,6 +223,8 @@ def _content_to_text(content: Any) -> str:
         return "\n".join(parts)
     if isinstance(content, dict):
         sub_parts: list[str] = []
+        if "intro_text" in content:
+            sub_parts.append(str(content["intro_text"]))
         if "paragraphs" in content:
             sub_parts.append(str(content["paragraphs"]))
         if "tables" in content:
@@ -229,28 +241,15 @@ def extract_field(
     field_type: str,
     content: Any,
     section_map_entry: dict[str, Any] | None = None,
+    heading: str | None = None,
 ) -> dict[str, Any]:
-    """Extract and format content for a single ACF field.
-
-    Parameters
-    ----------
-    field_key : str
-        The target ACF field key (e.g. ``"about_content"``).
-    field_type : str
-        One of ``"text"``, ``"wysiwyg"``, ``"stat"``, ``"table"``,
-        ``"bullet"``, ``"faq"``.
-    content : Any
-        The raw section content from the docx parser.
-    section_map_entry : dict | None
-        The full section map entry (with ``type`` and ``content`` keys).
-        Used for richer context if available.
-
-    Returns
-    -------
-    dict
-        ``{"value": <extracted>, ...}``
-    """
+    """Extract and format content for a single ACF field."""
     text_block = _content_to_text(content)
+
+    if heading:
+        # Strip internal tags like [about_heading] before passing to Claude
+        clean_heading = re.sub(r"^\[.*?\]\s*", "", heading).strip()
+        text_block = f"Section Heading: {clean_heading}\n\n{text_block}"
 
     if not text_block.strip():
         return {
@@ -266,6 +265,8 @@ def extract_field(
 
     if field_type == "text":
         return _extract_text(field_key, text_block)
+    elif field_type == "textarea":
+        return _extract_textarea(field_key, text_block)
     elif field_type == "wysiwyg":
         return _extract_wysiwyg(field_key, text_block)
     elif field_type == "stat":
@@ -276,6 +277,8 @@ def extract_field(
         return _extract_bullet(field_key, text_block)
     elif field_type == "faq":
         return _extract_faq(field_key, text_block)
+    elif field_type == "json":
+        return _extract_json_array(field_key, text_block)
     else:
         # Unknown type — fallback to wysiwyg
         return _extract_wysiwyg(field_key, text_block)
@@ -288,6 +291,19 @@ def _extract_text(field_key: str, text_block: str) -> dict[str, Any]:
         f"document section. Return a short plain-text value.\n\n"
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": "extracted text here"}}'
+    )
+    raw = _call_claude(SYSTEM_PROMPT, prompt)
+    return _parse_json_response(raw)
+
+
+def _extract_textarea(field_key: str, text_block: str) -> dict[str, Any]:
+    """Extract a paragraph of text for a TEXTAREA field without forcing HTML tags."""
+    prompt = (
+        f"Extract the value for the field '{field_key}' from the following "
+        f"document section. Return the plain text paragraph(s) only. "
+        f"Do NOT include any tabular data. If you find the relevant paragraph, DO NOT return null.\n\n"
+        f"Content:\n{text_block}\n\n"
+        f'Return ONLY: {{"value": "extracted text paragraph here"}}'
     )
     raw = _call_claude(SYSTEM_PROMPT, prompt)
     return _parse_json_response(raw)
@@ -389,6 +405,64 @@ def _extract_faq(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": [{{"question":"…","answer":"…"}}]}}'
     )
+    raw = _call_claude(SYSTEM_PROMPT, prompt)
+    return _parse_json_response(raw)
+
+
+def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:
+    """Extract content as a JSON array of objects according to SYSTEM_PROMPT definitions."""
+    prompt = (
+        f"Convert the following content to a JSON array for the ACF field "
+        f"'{field_key}'. Refer to the 'REPEATER STRUCTURES' in your system instructions "
+        f"for the exact keys to use for this field. Preserve all relevant information.\n\n"
+        f"Content:\n{text_block}\n\n"
+        f'Return ONLY a valid JSON array: {{"value": [{{...}}, {{...}}]}}'
+    )
+    raw = _call_claude(SYSTEM_PROMPT, prompt)
+    result = _parse_json_response(raw)
+
+    val = result.get("value")
+    if val is not None and not isinstance(val, list):
+        if isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    result["value"] = parsed
+                else:
+                    result["value"] = None
+                    result["structure_error"] = True
+            except json.JSONDecodeError:
+                result["value"] = None
+                result["structure_error"] = True
+
+    return result
+
+
+def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str, str]:
+    """Generate SEO fields and intro subtitles using Claude based on the extracted payload."""
+    target_fields = ["seo_title", "meta_description", "programs_intro"]
+    
+    # We provide a summary of the payload to Claude to keep the prompt concise
+    summary = {}
+    for k, v in payload.items():
+        if v and not isinstance(v, list) and k not in target_fields:
+            # truncate long HTML contents for the prompt
+            val_str = str(v)
+            if len(val_str) > 500:
+                val_str = val_str[:500] + "..."
+            summary[k] = val_str
+            
+    prompt = (
+        f"Based on the following extracted data for a {page_type} page, generate the following fields:\n"
+        f"{', '.join(target_fields)}\n\n"
+        f"Rules:\n"
+        f"- seo_title: 50-60 characters, compelling.\n"
+        f"- meta_description: 140-160 characters, compelling search snippet.\n"
+        f"- programs_intro: One line subtitle to go above the programs table.\n\n"
+        f"Data:\n{json.dumps(summary, indent=2)}\n\n"
+        f"Return ONLY a valid JSON object with keys: {', '.join(target_fields)}."
+    )
+
     raw = _call_claude(SYSTEM_PROMPT, prompt)
     return _parse_json_response(raw)
 

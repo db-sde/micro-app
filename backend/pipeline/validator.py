@@ -15,7 +15,7 @@ from typing import Any
 from acf.fields import ACF_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type
 
 SHORT_OK_FIELDS = {
-    'university_name', 'university_full_name', 'established_year', 'cdoe_year',
+    'university_name', 'university_full_name', 'established_year',
     'naac_grade', 'ugc_approved', 'ugc_status', 'mode_of_learning', 'mode',
     'starting_fee', 'total_fee', 'num_programs', 'num_specializations',
     'duration', 'validity', 'emi_amount', 'admission_fee_note',

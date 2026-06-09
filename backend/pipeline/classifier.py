@@ -77,24 +77,28 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
         # fall back to raw_tag itself when the writer put only a tag with no body
         display = m.group(2).strip() or raw_tag
 
-        # Handle comma-separated tags (e.g., [about_heading,about_content])
-        # We pick the first valid field that is NOT a _heading field
-        chosen_tag = tag
+        chosen_tags = []
         if "," in tag:
             parts = [p.strip() for p in tag.split(",")]
             for p in parts:
                 if p in valid_acf_fields and not p.endswith("_heading"):
-                    chosen_tag = p
-                    break
+                    chosen_tags.append(p)
+            # If no content tags, maybe there are only heading tags. We'll skip adding them, 
+            # because _heading tags are auto-populated in service.py anyway.
+            if not chosen_tags:
+                chosen_tags = [p for p in parts if p in valid_acf_fields]
+        else:
+            if tag in valid_acf_fields:
+                chosen_tags.append(tag)
 
-        if chosen_tag in valid_acf_fields:
+        if chosen_tags:
             logger.info(
-                "TAGGED [T1]: heading=%r → field=%s (direct, no embedding)",
-                heading, chosen_tag,
+                "TAGGED [T1]: heading=%r → fields=%s (direct, no embedding)",
+                heading, chosen_tags,
             )
             return {
                 "route":         "direct",
-                "field_key":     chosen_tag,
+                "field_keys":    chosen_tags,
                 "display":       display,
                 "embed_heading": None,   # Tier 1 never embeds
                 "tag_found":     raw_tag,

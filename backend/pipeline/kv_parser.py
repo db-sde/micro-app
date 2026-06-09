@@ -149,6 +149,10 @@ def parse_kv_section(raw_text: str) -> list[dict[str, Any]]:
         key_text   = parts[0].strip()
         value_text = parts[1].strip()
 
+        # Strip any HTML tags that leaked in (e.g. <p> or </p>)
+        key_text = re.sub(r'<[^>]+>', '', key_text).strip()
+        value_text = re.sub(r'<[^>]+>', '', value_text).strip()
+
         if not key_text or not value_text:
             continue
 

@@ -167,6 +167,8 @@ _FILENAME_CLEAN_STEPS: list[tuple[str, str]] = [
     (r"\.docx?$",                                     ""),   # extension
     (r"^copy\s+of\s+",                                ""),   # "Copy of ..."
     (r"^copy\s*[-_]",                                 ""),   # "Copy-" / "Copy_"
+    (r"[-_]?\s*acf[-_]?headings?",                    ""),   # "_ACF_Headings"
+    (r"[-_]?\s*combined[-_]?tags?",                   ""),   # "_COMBINED_TAGS"
     (r"\s*\(\d+\)\s*$",                               ""),   # trailing "(1)", "(2)"
     (r"\s*[-_]\s*\d+\s*$",                            ""),   # trailing "- 1" / "_2"
     (r"\s*v\d+(?:\.\d+)?\s*$",                        ""),   # trailing "v2", "v1.1"
@@ -233,7 +235,6 @@ def _enrich_course_name(
 
         # Source 1: cleaned filename
         name = clean_filename(filename)
-        name = strip_university_prefix(name)
         name = re.sub(
             r"\b(program|course|page|doc|document|file|university|college)\b",
             "",
@@ -242,8 +243,9 @@ def _enrich_course_name(
         ).strip(" -_")
         name = re.sub(r"\s{2,}", " ", name).strip()
 
-        if name and len(name) > 3:
-            payload[field_key] = name.title()
+        if name and len(name) >= 3:
+            # If name is all caps (e.g. SRM), keep it uppercase, else title case
+            payload[field_key] = name if name.isupper() else name.title()
             enrichment_log.append({
                 "field_key": field_key,
                 "status":    "enriched",
@@ -255,16 +257,24 @@ def _enrich_course_name(
             continue
 
         # Source 2: first real section heading
+        from pipeline.docx_parser import _extract_university_name
         for heading, section in section_map.items():
             if heading.startswith("__"):
                 continue
             original_heading = section.get("heading_original", heading)
-            stripped = strip_university_prefix(original_heading)
-            stripped = re.sub(
-                r"^about\s+", "", stripped, flags=re.IGNORECASE
-            ).strip()
-            if stripped and len(stripped) > 3:
-                payload[field_key] = stripped
+            extracted_uni = _extract_university_name(original_heading)
+            
+            # Clean up the extracted university name
+            extracted_uni = re.sub(
+                r"\b(program|course|page|doc|document|file|university|college)\b",
+                "",
+                extracted_uni,
+                flags=re.IGNORECASE,
+            ).strip(" -_")
+            extracted_uni = re.sub(r"\s{2,}", " ", extracted_uni).strip()
+            
+            if extracted_uni and len(extracted_uni) >= 3:
+                payload[field_key] = extracted_uni if extracted_uni.isupper() else extracted_uni.title()
                 enrichment_log.append({
                     "field_key": field_key,
                     "status":    "enriched",
@@ -272,7 +282,7 @@ def _enrich_course_name(
                 })
                 logger.info(
                     "ENRICHED: %s = %r (source=first_heading)",
-                    field_key, stripped,
+                    field_key, payload[field_key],
                 )
             break   # only try first section
 

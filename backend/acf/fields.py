@@ -7,7 +7,7 @@ IMAGE      = 'image'
 RELATION   = 'relation'
 
 # Fields that should never be extracted from Word — output null, not missing
-SKIP_EXTRACTION_FIELDS = {'hero_image', 'linked_university', 'linked_course'}
+SKIP_EXTRACTION_FIELDS = {'linked_university', 'linked_course'}
 
 ACF_FIELDS = {
 
@@ -17,13 +17,11 @@ ACF_FIELDS = {
         {'key': 'university_full_name','type': TEXT,     'embed': 'university full official legal name complete'},
         {'key': 'hero_description',   'type': TEXTAREA, 'embed': 'hero description tagline short intro banner subtitle overview'},
         {'key': 'established_year',   'type': STAT,     'embed': 'established year founded since inception year est'},
-        {'key': 'cdoe_year',          'type': STAT,     'embed': 'cdoe department online distance education start year'},
         {'key': 'naac_grade',         'type': STAT,     'embed': 'naac grade accreditation rating A A+ score'},
         {'key': 'ugc_approved',       'type': TEXT,     'embed': 'ugc approved entitled status recognition approval'},
         {'key': 'mode_of_learning',   'type': TEXT,     'embed': 'mode of learning online offline distance hybrid delivery'},
         {'key': 'starting_fee',       'type': STAT,     'embed': 'starting fee lowest fee minimum fee per semester program'},
         {'key': 'num_programs',       'type': STAT,     'embed': 'number of programs total programs courses offered count'},
-        {'key': 'hero_image',         'type': IMAGE,    'embed': 'hero image background banner'},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading section title'},
         {'key': 'why_choose_heading',     'type': TEXT, 'embed': 'why choose heading title pros benefits'},
@@ -77,7 +75,6 @@ ACF_FIELDS = {
         {'key': 'ugc_status',         'type': TEXT,     'embed': 'ugc status entitled approved recognition'},
         {'key': 'total_fee',          'type': STAT,     'embed': 'total fee best price complete course fee cost amount'},
         {'key': 'num_specializations','type': STAT,     'embed': 'number of specializations count available tracks options'},
-        {'key': 'hero_image',         'type': IMAGE,    'embed': 'hero image background banner'},
         # Headings
         {'key': 'about_heading',           'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',      'type': TEXT, 'embed': 'highlights heading program highlights title'},

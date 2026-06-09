@@ -222,14 +222,15 @@ def run_extraction_pipeline(
 
         if result["route"] == "direct":
             # TIER 1 — skip embedding entirely
-            direct_assignments.append({
-                "heading": heading,
-                "content": section_data.get("content", section_data),
-                "field_key": result["field_key"],
-                "confidence": 1.0,
-                "source": "tagged",
-                "tier": 1,
-            })
+            for f_key in result["field_keys"]:
+                direct_assignments.append({
+                    "heading": heading,
+                    "content": section_data.get("content", section_data),
+                    "field_key": f_key,
+                    "confidence": 1.0,
+                    "source": "tagged",
+                    "tier": 1,
+                })
         else:
             # TIER 2 or 3 — use embed_heading for embedding
             section_data["heading_for_embedding"] = result["embed_heading"]
@@ -259,6 +260,20 @@ def run_extraction_pipeline(
         len(assignments), len(direct_assignments), len(assignments) - len(direct_assignments),
     )
 
+    # ── Launch AI SEO Generation Concurrently ──
+    seo_future = None
+    seo_executor = None
+    if detected_type == "university":
+        from pipeline.extractor import generate_seo_and_intro
+        import concurrent.futures
+        
+        # Build a lightweight snapshot using KV data and metadata for the SEO prompt
+        seo_snapshot = dict(kv_payload)
+        seo_snapshot.update(section_map.get("__meta__", {}))
+        
+        seo_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        seo_future = seo_executor.submit(generate_seo_and_intro, seo_snapshot, detected_type)
+
     #   Pass 2 — extract content for each assigned field (Claude calls)
     payload, mapping_records = _extract_assignments(assignments, detected_type)
 
@@ -272,6 +287,27 @@ def run_extraction_pipeline(
 
     # ── Step 5: Enrich payload (regex, zero API calls) ──
     payload, enrichment_log = enrich_payload(payload, section_map, detected_type, filename=filename)
+
+    # ── Step 5.2: AI generation for SEO and Intro fields ──
+    if detected_type == "university" and seo_future:
+        try:
+            ai_generated = seo_future.result()
+            for k, v in ai_generated.items():
+                if v:
+                    payload[k] = v
+                    mapping_records.append({
+                        "field_key": k,
+                        "heading_in_doc": "[AI Generated]",
+                        "value": v,
+                        "confidence": 1.0,
+                        "status": "mapped",
+                        "source": "AI_GENERATED",
+                    })
+        except Exception as exc:
+            logger.warning("generate_seo_and_intro failed: %s", exc)
+        finally:
+            if seo_executor:
+                seo_executor.shutdown(wait=False)
 
     # Record enrichment results as mapping entries
     for entry in enrichment_log:
@@ -611,7 +647,7 @@ def _extract_assignments(
         content = assignment["content"]
         
         try:
-            extracted = extract_field(chosen_field, ft, content)
+            extracted = extract_field(chosen_field, ft, content, heading=heading)
         except Exception as exc:
             logger.warning("extract_field(%s) failed: %s", chosen_field, exc)
             extracted = {"value": None, "error": str(exc)}
