@@ -77,19 +77,49 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
         # fall back to raw_tag itself when the writer put only a tag with no body
         display = m.group(2).strip() or raw_tag
 
+        # Heading-to-content pairing: if a lone _heading tag is used, we
+        # also want to extract the content field that pairs with it.
+        _HEADING_TO_CONTENT: dict[str, str] = {
+            "accreditations_heading":  "accreditations",
+            "highlights_heading":      "highlights",
+            "specializations_heading": "specializations_intro",
+            "fee_heading":             "fee_plans",
+            "eligibility_heading":     "eligibility_content",
+            "admission_heading":       "admission_steps",
+            "syllabus_heading":        "syllabus_content",
+            "placement_heading":       "placement_content",
+            "jobs_heading":            "job_profiles",
+            "faqs_heading":            "faqs",
+            "about_heading":           "about_content",
+            "why_choose_heading":      "why_choose_content",
+            "facts_heading":           "facts",
+            "programs_heading":        "programs_table",
+            "emi_heading":             "emi_content",
+            "exam_heading":            "exam_content",
+            "faculty_heading":         "faculty_members",
+            "reviews_heading":         "reviews",
+            "certificate_heading":     "certificate_description",
+            "other_specs_heading":     "other_specs",
+        }
+
         chosen_tags = []
         if "," in tag:
             parts = [p.strip() for p in tag.split(",")]
             for p in parts:
                 if p in valid_acf_fields and not p.endswith("_heading"):
                     chosen_tags.append(p)
-            # If no content tags, maybe there are only heading tags. We'll skip adding them, 
+            # If no content tags, maybe there are only heading tags. We'll skip adding them,
             # because _heading tags are auto-populated in service.py anyway.
             if not chosen_tags:
                 chosen_tags = [p for p in parts if p in valid_acf_fields]
         else:
             if tag in valid_acf_fields:
                 chosen_tags.append(tag)
+                # If it's a lone _heading tag, also add the content counterpart
+                # so the section body is extracted (not just the heading title).
+                content_pair = _HEADING_TO_CONTENT.get(tag)
+                if content_pair and content_pair in valid_acf_fields:
+                    chosen_tags.append(content_pair)
 
         if chosen_tags:
             logger.info(

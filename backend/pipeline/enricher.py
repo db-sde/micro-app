@@ -435,8 +435,171 @@ def enrich_payload(
     _enrich_course_name(payload, section_map, filename, page_type, enrichment_log)
     _fill_specializations_from_fees(payload, enrichment_log)
     _derive_stats(payload, enrichment_log)
+    _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
 
     return payload, enrichment_log
+
+
+def _enrich_course_stats(
+    payload: dict[str, Any],
+    section_map: dict[str, dict[str, Any]],
+    filename: str,
+    page_type: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Derive missing course/specialization stat fields from filename + payload.
+
+    Fills: program_name, university_name, mode, naac_grade, ugc_status,
+           num_specializations, starting_fee, eligibility_summary.
+
+    No API calls — deterministic regex + heuristics only.
+    """
+    if page_type not in ("course", "specialization"):
+        return
+
+    # ── program_name: from filename ──────────────────────────────
+    if not payload.get("program_name"):
+        name = clean_filename(filename)
+        # Look for known program keywords in the name
+        m = re.search(
+            r"\b(mba|mca|bba|bca|b\.?\s*tech|m\.?\s*tech|bsc|msc|b\.?\s*com|m\.?\s*com|ma|ba|llb|llm|phd|pgdm|diploma)\b",
+            name, re.IGNORECASE,
+        )
+        if m:
+            # Extract the institution name + program type
+            prog = m.group(0).upper()
+            payload["program_name"] = prog
+            enrichment_log.append({"field_key": "program_name", "status": "enriched", "source": "filename"})
+            logger.info("ENRICHED: program_name = %r (source=filename)", prog)
+
+    # ── university_name: from filename ───────────────────────────
+    if not payload.get("university_name"):
+        name = clean_filename(filename)
+        # Remove program keyword onwards to get institution part
+        m = re.search(
+            r"\b(mba|mca|bba|bca|b\.?\s*tech|m\.?\s*tech|bsc|msc|b\.?\s*com|m\.?\s*com|ma|ba|llb|llm|phd|pgdm|diploma|online)\b",
+            name, re.IGNORECASE,
+        )
+        uni = (name[:m.start()].strip(" -_") if m else name).strip()
+        uni = re.sub(r"\s{2,}", " ", uni)
+        if uni and len(uni) >= 3:
+            payload["university_name"] = uni.title()
+            enrichment_log.append({"field_key": "university_name", "status": "enriched", "source": "filename"})
+            logger.info("ENRICHED: university_name = %r (source=filename)", uni)
+
+    # ── mode: from hero_description or highlights ─────────────────
+    if not payload.get("mode"):
+        for src_key in ("hero_description", "about_content", "highlights"):
+            src_val = payload.get(src_key)
+            if not src_val:
+                continue
+            flat = _flatten_value(src_val)
+            if re.search(r"\bonline\b", flat, re.IGNORECASE):
+                payload["mode"] = "Online"
+                enrichment_log.append({"field_key": "mode", "status": "enriched", "source": f"derive:{src_key}"})
+                logger.info("ENRICHED: mode = 'Online' (source=%s)", src_key)
+                break
+            elif re.search(r"\bhybrid\b", flat, re.IGNORECASE):
+                payload["mode"] = "Hybrid"
+                enrichment_log.append({"field_key": "mode", "status": "enriched", "source": f"derive:{src_key}"})
+                logger.info("ENRICHED: mode = 'Hybrid' (source=%s)", src_key)
+                break
+
+    # ── naac_grade: from accreditations or hero ───────────────────
+    # Run if missing OR if the current value is a bare letter (e.g. 'A') with no '+'
+    # — the KV block sometimes gives just 'A' while accreditations has 'A++'
+    current_naac = payload.get("naac_grade") or ""
+    naac_is_coarse = bool(current_naac) and "+" not in str(current_naac)
+    if not current_naac or naac_is_coarse:
+        for src_key in ("accreditations", "hero_description", "about_content", "highlights"):
+            src_val = payload.get(src_key)
+            if not src_val:
+                continue
+            flat = _flatten_value(src_val)
+            m = re.search(r"NAAC\s+([A-F]\+{1,2})", flat, re.IGNORECASE)  # require at least one +
+            if m:
+                payload["naac_grade"] = m.group(1).upper()
+                enrichment_log.append({"field_key": "naac_grade", "status": "enriched", "source": f"derive:{src_key}"})
+                logger.info("ENRICHED: naac_grade = %r (source=%s, upgraded_from=%r)", payload["naac_grade"], src_key, current_naac or None)
+                break
+
+    # ── ugc_status: from accreditations or hero ───────────────────
+    if not payload.get("ugc_status"):
+        for src_key in ("accreditations", "hero_description", "about_content"):
+            src_val = payload.get(src_key)
+            if not src_val:
+                continue
+            flat = _flatten_value(src_val)
+            if re.search(r"\bugc[-\s]?entitled\b", flat, re.IGNORECASE):
+                payload["ugc_status"] = "Entitled"
+            elif re.search(r"\bugc[-\s]?approved\b", flat, re.IGNORECASE):
+                payload["ugc_status"] = "Approved"
+            elif re.search(r"\bugc[-\s]?recognized\b", flat, re.IGNORECASE):
+                payload["ugc_status"] = "Recognized"
+            if payload.get("ugc_status"):
+                enrichment_log.append({"field_key": "ugc_status", "status": "enriched", "source": f"derive:{src_key}"})
+                logger.info("ENRICHED: ugc_status = %r (source=%s)", payload["ugc_status"], src_key)
+                break
+
+    # ── num_specializations: count from specializations_intro or fee_plans ──
+    if not payload.get("num_specializations"):
+        # Try specializations_intro text for a number
+        intro = payload.get("specializations_intro", "")
+        if intro:
+            m = re.search(r"(\d+)\s+specializ", str(intro), re.IGNORECASE)
+            if m:
+                payload["num_specializations"] = m.group(1) + "+"
+                enrichment_log.append({"field_key": "num_specializations", "status": "enriched", "source": "derive:specializations_intro"})
+                logger.info("ENRICHED: num_specializations = %r", payload["num_specializations"])
+        # Count from fee_plans rows
+        if not payload.get("num_specializations"):
+            fee_plans = payload.get("fee_plans")
+            if isinstance(fee_plans, list) and len(fee_plans) > 0:
+                payload["num_specializations"] = str(len(fee_plans)) + "+"
+                enrichment_log.append({"field_key": "num_specializations", "status": "enriched", "source": "derive:fee_plans_count"})
+                logger.info("ENRICHED: num_specializations = %r", payload["num_specializations"])
+
+    # ── starting_fee: lowest fee from fee_plans ───────────────────
+    if not payload.get("starting_fee"):
+        # Try total_fee first
+        if payload.get("total_fee"):
+            payload["starting_fee"] = payload["total_fee"]
+            enrichment_log.append({"field_key": "starting_fee", "status": "enriched", "source": "derive:total_fee"})
+            logger.info("ENRICHED: starting_fee = %r (source=total_fee)", payload["starting_fee"])
+        else:
+            # Scan fee_plans for smallest amount
+            fee_plans = payload.get("fee_plans")
+            if isinstance(fee_plans, list):
+                amounts = []
+                for row in fee_plans:
+                    if not isinstance(row, dict):
+                        continue
+                    for v in row.values():
+                        m = re.search(r"(?:INR|₹|Rs\.?)\s*([\d,]+)", str(v), re.IGNORECASE)
+                        if m:
+                            num = int(m.group(1).replace(",", ""))
+                            if num >= 1000:
+                                amounts.append((num, m.group(0)))
+                if amounts:
+                    smallest = min(amounts, key=lambda x: x[0])
+                    payload["starting_fee"] = smallest[1]
+                    enrichment_log.append({"field_key": "starting_fee", "status": "enriched", "source": "derive:fee_plans"})
+                    logger.info("ENRICHED: starting_fee = %r", payload["starting_fee"])
+
+    # ── eligibility_summary: short one-liner from eligibility_content ──
+    if not payload.get("eligibility_summary"):
+        elig = payload.get("eligibility_content", "")
+        if elig:
+            flat = _strip_html(str(elig)).strip()
+            # First sentence or first 120 chars
+            m = re.match(r"([^.!?]{20,120}[.!?])", flat)
+            if m:
+                payload["eligibility_summary"] = m.group(1).strip()
+            elif len(flat) > 20:
+                payload["eligibility_summary"] = flat[:120].rstrip() + "..."
+            if payload.get("eligibility_summary"):
+                enrichment_log.append({"field_key": "eligibility_summary", "status": "enriched", "source": "derive:eligibility_content"})
+                logger.info("ENRICHED: eligibility_summary = %r", payload["eligibility_summary"][:80])
 
 
 def _derive_stats(
@@ -487,11 +650,13 @@ def _derive_stats(
             logger.info("DERIVED: stat_faculty = %r", payload["stat_faculty"])
 
     # accreditations text → naac_grade (extract NAAC A+/B++ etc.)
-    if not payload.get("naac_grade"):
+    # Also override a bare letter like 'A' with a more precise 'A++' if found
+    _cur_naac = payload.get("naac_grade") or ""
+    if not _cur_naac or ("+" not in str(_cur_naac)):
         accr = payload.get("accreditations") or payload.get("course_accreditations", "")
         if accr:
             flat = accr if isinstance(accr, str) else " ".join(str(v) for v in accr)
-            m = re.search(r"NAAC\s+([A-F]\+{0,2})", flat, re.IGNORECASE)
+            m = re.search(r"NAAC\s+([A-F]\+{1,2})", flat, re.IGNORECASE)
             if m:
                 payload["naac_grade"] = m.group(1).upper()
                 enrichment_log.append({
@@ -499,7 +664,7 @@ def _derive_stats(
                     "status":    "enriched",
                     "source":    "derive:accreditations",
                 })
-                logger.info("DERIVED: naac_grade = %r", payload["naac_grade"])
+                logger.info("DERIVED: naac_grade = %r (upgraded_from=%r)", payload["naac_grade"], _cur_naac or None)
 
     # about_content text → established_year (if still missing)
     if not payload.get("established_year"):

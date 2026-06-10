@@ -208,6 +208,7 @@ def match_headings_to_fields(
         results.append(
             {
                 "heading": heading,
+                "original_heading": section_data.get("heading_original", heading),
                 "section_type": content_type,
                 "content": section_data.get("content", section_data),
                 "matches": top3,

@@ -33,8 +33,8 @@ logger = logging.getLogger("degreebaba.kv_parser")
 
 # ──────────────────────────── KV delimiter ────────────────────────────
 
-# Accepts: " - ", " : ", " — ", " – ", " : ", ": ", "- " etc.
-KV_DELIMITER_RE = re.compile(r"\s*[-:—–]\s+")
+# Accepts: " - ", " : ", " — ", " – ", " : ", ": ", "- ", ":", "—", "–"
+KV_DELIMITER_RE = re.compile(r"\s*(?:-\s+|[:—–]\s*)")
 
 
 def looks_like_kv_section(raw_text: str) -> bool:
@@ -79,10 +79,12 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Mode of delivery
     (r"mode\s*(?:of\s*)?(?:learning|study|education|delivery|teaching)",
                                                               "mode_of_learning"),
+    # Program name (must come BEFORE num_programs to avoid 'Program Name' falling through)
+    (r"^program\s*name$",                                     "program_name"),
     # Program count stat
     (r"(?:total\s*|number\s*of\s*)?(?:programs?|courses?)(?:\s*(?:offered|available|count))?",
                                                               "num_programs"),
-    # NAAC grade specifically
+    # NAAC grade specifically (duplicate guard, keep for ordering safety)
     (r"naac\s*(?:grade|rating|score)|grade",                  "naac_grade"),
     # Ranking
     (r"rank(?:ing|ed)?|nirf|rated\s+\d",                      "ranking"),
@@ -97,6 +99,9 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Duration
     (r"duration|program\s*length|course\s*(?:length|period)|time\s*to\s*complete",
                                                               "duration"),
+    # Validity / degree validity period
+    (r"validity|valid\s*(?:for|period|years?)|degree\s*validity",
+                                                              "validity"),
     # EMI
     (r"emi|monthly\s*(?:installment|payment)|pay\s*per\s*month",
                                                               "emi_amount"),
@@ -112,9 +117,10 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
 # Optional value extractors for fields where we can do better than raw text
 _VALUE_EXTRACTORS: dict[str, re.Pattern[str]] = {
     "established_year": re.compile(r"\b(19|20)\d{2}\b"),
-    "naac_grade":       re.compile(r"\b[A-F]\+?\b"),
+    "naac_grade":       re.compile(r"\b[A-F]\+{0,2}\b"),
     "total_fee":        re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+(?:\s*/\-)?"),
     "duration":         re.compile(r"\d+\s*(?:year|month|semester)s?", re.IGNORECASE),
+    "validity":         re.compile(r"\d+\s*(?:year|month)s?", re.IGNORECASE),
     "emi_amount":       re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+", re.IGNORECASE),
     "num_programs":         re.compile(r"\d+\s*\+?"),
     "num_specializations":  re.compile(r"\d+\s*\+?"),
@@ -154,6 +160,11 @@ def parse_kv_section(raw_text: str) -> list[dict[str, Any]]:
         value_text = re.sub(r'<[^>]+>', '', value_text).strip()
 
         if not key_text or not value_text:
+            continue
+
+        # Guard: skip lines that look like FAQ questions (long key or ends with ?)
+        # Real metadata keys are short labels like "Duration", "Total Fee", etc.
+        if key_text.endswith('?') or len(key_text) > 80:
             continue
 
         # Match key text against semantic patterns
@@ -203,10 +214,20 @@ def flatten_section_to_text(content: Any) -> str:
                 if text:
                     parts.append(str(text))
                 else:
-                    parts.extend(str(v) for v in item.values() if v)
+                    row_vals = [str(v).strip() for v in item.values() if v and str(v).strip()]
+                    if row_vals:
+                        parts.append(" - ".join(row_vals))
             elif isinstance(item, str):
                 parts.append(item)
+            elif isinstance(item, list):
+                row_vals = [str(v).strip() for v in item if v and str(v).strip()]
+                if row_vals:
+                    parts.append(" - ".join(row_vals))
         return "\n".join(parts)
     if isinstance(content, dict):
-        return "\n".join(str(v) for v in content.values() if v)
+        parts = []
+        for v in content.values():
+            if v:
+                parts.append(flatten_section_to_text(v))
+        return "\n".join(parts)
     return str(content)

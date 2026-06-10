@@ -202,7 +202,7 @@ def run_extraction_pipeline(
 
     for h in kv_headings_to_remove:
         logger.info(
-            "KV_SECTION: removed %r from embedding pass (%d fields extracted)",
+            "KV_SECTION: processed %r in KV pass (%d fields extracted)",
             h, sum(1 for r in kv_records if r["heading_in_doc"] == h),
         )
 
@@ -260,20 +260,6 @@ def run_extraction_pipeline(
         len(assignments), len(direct_assignments), len(assignments) - len(direct_assignments),
     )
 
-    # ── Launch AI SEO Generation Concurrently ──
-    seo_future = None
-    seo_executor = None
-    if detected_type == "university":
-        from pipeline.extractor import generate_seo_and_intro
-        import concurrent.futures
-        
-        # Build a lightweight snapshot using KV data and metadata for the SEO prompt
-        seo_snapshot = dict(kv_payload)
-        seo_snapshot.update(section_map.get("__meta__", {}))
-        
-        seo_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        seo_future = seo_executor.submit(generate_seo_and_intro, seo_snapshot, detected_type)
-
     #   Pass 2 — extract content for each assigned field (Claude calls)
     payload, mapping_records = _extract_assignments(assignments, detected_type)
 
@@ -289,11 +275,15 @@ def run_extraction_pipeline(
     payload, enrichment_log = enrich_payload(payload, section_map, detected_type, filename=filename)
 
     # ── Step 5.2: AI generation for SEO and Intro fields ──
-    if detected_type == "university" and seo_future:
+    # Run AFTER full extraction so the prompt has real content (hero, about, etc.)
+    if detected_type in ("university", "course", "specialization"):
         try:
-            ai_generated = seo_future.result()
+            from pipeline.extractor import generate_seo_and_intro
+            # Build a rich snapshot from the fully-extracted payload
+            seo_snapshot = {k: v for k, v in payload.items() if v is not None}
+            ai_generated = generate_seo_and_intro(seo_snapshot, detected_type)
             for k, v in ai_generated.items():
-                if v:
+                if v and payload.get(k) is None:
                     payload[k] = v
                     mapping_records.append({
                         "field_key": k,
@@ -305,9 +295,6 @@ def run_extraction_pipeline(
                     })
         except Exception as exc:
             logger.warning("generate_seo_and_intro failed: %s", exc)
-        finally:
-            if seo_executor:
-                seo_executor.shutdown(wait=False)
 
     # Record enrichment results as mapping entries
     for entry in enrichment_log:
@@ -480,6 +467,7 @@ def _route_headings(
     for match in matches:
         raw_best_score: float = match["best_score"]
         heading: str = match["heading"]
+        original_heading: str = match.get("original_heading", heading)
         content: Any = match["content"]
         candidates: list[dict[str, Any]] = match["matches"]
 
@@ -511,7 +499,7 @@ def _route_headings(
             # Medium confidence — confirm with AI
             try:
                 confirmation = confirm_mapping(
-                    heading, content, best_field, detected_type
+                    original_heading, content, best_field, detected_type
                 )
                 if confirmation.get("confirmed"):
                     chosen_field = best_field
@@ -521,26 +509,34 @@ def _route_headings(
                         heading, best_field, best_score,
                     )
                 else:
-                    # Rejection fallback: try next candidates deterministically
-                    for candidate in corrected_candidates[1:]:
-                        cand_score = candidate["score"]
-                        if cand_score >= THRESHOLD_VERIFY:
-                            chosen_field = candidate["field_key"]
-                            confidence = cand_score
-                            source = "embedding_fallback"
+                    # AI rejected the best embedding match
+                    logger.info(
+                        "REJECTED: heading=%r — best=%s rejected, fallback triggered",
+                        heading, best_field,
+                    )
+                    # Use the deterministic fallback list provided by the AI if any,
+                    # otherwise fallback to next best score >= 0.72
+                    if confirmation.get("fallback"):
+                        chosen_field = confirmation["fallback"]
+                        source = "ai_fallback"
+                    else:
+                        for candidate in corrected_candidates[1:]:
+                            cand_score = candidate["score"]
+                            if cand_score >= THRESHOLD_VERIFY:
+                                chosen_field = candidate["field_key"]
+                                confidence = cand_score
+                                source = "embedding_fallback"
+                                logger.info(
+                                    "FALLBACK: heading=%r → %s (score=%.4f)",
+                                    heading, chosen_field, cand_score,
+                                )
+                                break
+                        if chosen_field is None:
                             logger.info(
-                                "FALLBACK: heading=%r rejected best=%s(%.4f),"
-                                " using %s(%.4f)",
-                                heading, best_field, best_score,
-                                chosen_field, cand_score,
+                                "REJECTED: heading=%r — best=%s rejected, "
+                                "no fallback candidates ≥ %.2f",
+                                heading, best_field, THRESHOLD_VERIFY,
                             )
-                            break
-                    if chosen_field is None:
-                        logger.info(
-                            "REJECTED: heading=%r — best=%s rejected, "
-                            "no fallback candidates ≥ %.2f",
-                            heading, best_field, THRESHOLD_VERIFY,
-                        )
             except Exception as exc:
                 logger.warning(
                     "confirm_mapping failed for %r: %s", heading, exc
@@ -551,7 +547,7 @@ def _route_headings(
             # Low confidence — resolve with AI using all candidates
             try:
                 resolution = resolve_ambiguous(
-                    heading, content, corrected_candidates, detected_type
+                    original_heading, content, corrected_candidates, detected_type
                 )
                 chosen_field = resolution.get("field_key")
                 confidence = resolution.get("confidence", 0.0)

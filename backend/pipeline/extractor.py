@@ -79,7 +79,7 @@ accreditations:   [{"body_name": "NAAC", "body_descriptor": "A+ Grade", "body_de
 programs_table:   [{"program_name": "MBA", "program_fee": "₹45,000/-", "program_eligibility": "Bachelor's degree"}]
 faculty_members:  [{"member_name": "Dr. Name", "member_program": "MBA", "member_designation": "Professor", "member_qualification": "Ph.D."}]
 highlights:       [{"highlight_title": "Industry Mentors", "highlight_description": "Learn from CXOs"}]
-fee_plans:        [{"plan_name": "Semester Plan", "plan_amount": "₹25,000", "plan_total": "₹1,00,000"}]
+fee_plans:        [{"plan_name": "Semester Plan", "plan_amount": "₹25,000", "plan_total": "Year I"}]
 other_specs:      [{"other_spec_name": "Finance", "other_spec_fee": "₹1,75,000"}]
 job_profiles:     [{"job_title": "Business Analyst", "avg_salary": "INR 5 LPA"}]
 reviews:          [{"review_text": "Great experience...", "reviewer_label": "MBA Graduate, 2024"}]
@@ -119,8 +119,11 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
     ),
     "reviews": (
         "Extract individual student reviews or testimonials as separate items. "
-        "Each paragraph is typically one review. "
-        "Return a JSON array of strings, each string is one review."
+        "Each paragraph or block is typically one review. "
+        "Return a JSON array of objects with keys 'review_text' and 'reviewer_label'. "
+        "'reviewer_label' should be the reviewer's role or identity if mentioned "
+        "(e.g. 'MBA Student', 'Working Professional', 'Graduate 2024'). "
+        "If no label is present for a review, use 'Student' as the default — never null."
     ),
     "admission_fee_note": (
         "IMPORTANT: Find the specific line, step, or sentence that mentions paying the application fee, "
@@ -152,6 +155,14 @@ def _call_claude(system: str, user_prompt: str) -> str:
         raise RuntimeError(f"Anthropic API call failed: {exc}") from exc
 
 
+def _ensure_dict(parsed: Any) -> dict[str, Any]:
+    """Ensure the parsed JSON is always a dictionary to prevent AttributeErrors."""
+    if isinstance(parsed, list):
+        return {"value": parsed}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"value": parsed}
+
 def _parse_json_response(raw: str) -> dict[str, Any]:
     """Try to parse JSON from Claude's response.
 
@@ -160,7 +171,7 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
     """
     # 1. Direct parse
     try:
-        return json.loads(raw)
+        return _ensure_dict(json.loads(raw, strict=False))
     except json.JSONDecodeError:
         pass
 
@@ -168,7 +179,7 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
     match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1))
+            return _ensure_dict(json.loads(match.group(1), strict=False))
         except json.JSONDecodeError:
             pass
 
@@ -184,7 +195,7 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
     if start >= 0:
         candidate = raw[start:]
         try:
-            return json.loads(candidate)
+            return _ensure_dict(json.loads(candidate, strict=False))
         except json.JSONDecodeError:
             pass
 
@@ -422,6 +433,19 @@ def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:
     result = _parse_json_response(raw)
 
     val = result.get("value")
+    
+    # If Claude returned {"highlights": [...]} instead of {"value": [...]}
+    if val is None and field_key in result:
+        val = result[field_key]
+        result["value"] = val
+        
+    # If Claude returned some other random key e.g. {"data": [...]}
+    if val is None and len(result) == 1:
+        first_val = next(iter(result.values()))
+        if isinstance(first_val, list):
+            val = first_val
+            result["value"] = val
+
     if val is not None and not isinstance(val, list):
         if isinstance(val, str):
             try:
@@ -440,8 +464,26 @@ def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:
 
 def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str, str]:
     """Generate SEO fields and intro subtitles using Claude based on the extracted payload."""
-    target_fields = ["seo_title", "meta_description", "programs_intro"]
-    
+    if page_type == "university":
+        target_fields = ["seo_title", "meta_description", "programs_intro"]
+        rules = (
+            "- seo_title: 50-60 characters, compelling.\n"
+            "- meta_description: 140-160 characters, compelling search snippet.\n"
+            "- programs_intro: One line subtitle to go above the programs table.\n"
+        )
+    elif page_type == "specialization":
+        target_fields = ["seo_title", "meta_description"]
+        rules = (
+            "- seo_title: 50-60 characters, include the specialization and university name.\n"
+            "- meta_description: 140-160 characters, compelling search snippet for this specialization.\n"
+        )
+    else:  # course
+        target_fields = ["seo_title", "meta_description"]
+        rules = (
+            "- seo_title: 50-60 characters, include the program and university name.\n"
+            "- meta_description: 140-160 characters, compelling search snippet.\n"
+        )
+
     # We provide a summary of the payload to Claude to keep the prompt concise
     summary = {}
     for k, v in payload.items():
@@ -451,20 +493,19 @@ def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str,
             if len(val_str) > 500:
                 val_str = val_str[:500] + "..."
             summary[k] = val_str
-            
+
     prompt = (
         f"Based on the following extracted data for a {page_type} page, generate the following fields:\n"
         f"{', '.join(target_fields)}\n\n"
         f"Rules:\n"
-        f"- seo_title: 50-60 characters, compelling.\n"
-        f"- meta_description: 140-160 characters, compelling search snippet.\n"
-        f"- programs_intro: One line subtitle to go above the programs table.\n\n"
+        f"{rules}\n"
         f"Data:\n{json.dumps(summary, indent=2)}\n\n"
         f"Return ONLY a valid JSON object with keys: {', '.join(target_fields)}."
     )
 
     raw = _call_claude(SYSTEM_PROMPT, prompt)
     return _parse_json_response(raw)
+
 
 
 # ────────────────────────── mapping confirmation ──────────────────────────
