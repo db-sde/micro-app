@@ -142,7 +142,7 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
         "duration": {
             "payload_sources": [
                 "about_content", "eligibility_content",
-                "emi_content", "syllabus_content",
+                "syllabus_content",
             ],
             "heading_keywords": [
                 "fact", "detail", "about", "duration", "overview", "highlight",
@@ -151,14 +151,14 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
         },
         "total_fee": {
             "payload_sources": [
-                "emi_content", "eligibility_content", "about_content",
+                "eligibility_content", "about_content",
             ],
             "heading_keywords": ["fee", "cost", "price", "payment", "emi"],
             "extractor": "fee",
         },
         "emi_amount": {
             "payload_sources": [
-                "emi_content", "about_content",
+                "about_content",
             ],
             "heading_keywords": ["emi", "installment", "payment", "fee"],
             "extractor": "emi",

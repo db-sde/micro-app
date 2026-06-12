@@ -90,7 +90,6 @@ ACF_FIELDS = {
         # Content
         {'key': 'about_content',        'type': HTML,     'embed': 'about program description overview introduction body'},
         {'key': 'specializations_intro', 'type': TEXT,     'embed': 'specializations intro one line subtitle pick choose from'},
-        {'key': 'emi_content',           'type': HTML,     'embed': 'emi no cost installment payment financing monthly bank'},
         {'key': 'eligibility_content',   'type': HTML,     'embed': 'eligibility criteria who can apply requirements qualification'},
         {'key': 'admission_steps',       'type': HTML,     'embed': 'admission process steps how to apply procedure enrollment'},
         {'key': 'admission_fee_note',    'type': TEXT,     'embed': 'admission fee note application fee charges'},
@@ -124,7 +123,6 @@ ACF_FIELDS = {
         {'key': 'university_name',    'type': TEXT,     'embed': 'university name institution brand'},
         {'key': 'linked_university',  'type': RELATION, 'embed': 'linked university post id relationship'},
         {'key': 'linked_course',      'type': RELATION, 'embed': 'linked course post id relationship'},
-        {'key': 'hero_description',   'type': TEXTAREA, 'embed': 'hero description tagline short specialization intro overview'},
         {'key': 'duration',           'type': STAT,     'embed': 'duration months years program length'},
         {'key': 'mode',               'type': TEXT,     'embed': 'mode online offline hybrid learning delivery'},
         {'key': 'naac_grade',         'type': STAT,     'embed': 'naac grade accreditation A A+ rating'},
@@ -146,7 +144,6 @@ ACF_FIELDS = {
         # Content
         {'key': 'about_content',        'type': HTML,     'embed': 'about specialization description overview introduction body'},
         {'key': 'eligibility_content',  'type': HTML,     'embed': 'eligibility criteria who can apply requirements qualification'},
-        {'key': 'emi_content',          'type': HTML,     'embed': 'emi no cost installment payment financing monthly bank'},
         {'key': 'syllabus_content',     'type': HTML,     'embed': 'syllabus curriculum subjects semester module topics'},
         {'key': 'exam_content',         'type': HTML,     'embed': 'exam pattern proctored examination semester internal term end'},
         {'key': 'admission_steps',      'type': HTML,     'embed': 'admission process steps how to apply procedure enrollment'},

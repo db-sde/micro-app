@@ -478,10 +478,13 @@ def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str,
             "- meta_description: 140-160 characters, compelling search snippet for this specialization.\n"
         )
     else:  # course
-        target_fields = ["seo_title", "meta_description"]
+        target_fields = ["seo_title", "meta_description", "hero_description"]
         rules = (
             "- seo_title: 50-60 characters, include the program and university name.\n"
             "- meta_description: 140-160 characters, compelling search snippet.\n"
+            "- hero_description: 2-3 sentences (max 300 characters), a compelling banner tagline "
+            "for the program page. Mention key highlights, career outcomes, or USPs. "
+            "No markdown, plain text only.\n"
         )
 
     # We provide a summary of the payload to Claude to keep the prompt concise

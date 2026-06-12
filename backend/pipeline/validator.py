@@ -21,7 +21,7 @@ SHORT_OK_FIELDS = {
     'duration', 'validity', 'emi_amount', 'admission_fee_note',
     'programs_intro', 'specializations_intro', 'eligibility_summary',
     'certificate_description', 'faculty_intro',
-    'seo_title', 'meta_description',
+    'seo_title', 'meta_description', 'hero_description',
     # All heading fields
     'about_heading', 'why_choose_heading', 'facts_heading', 'accreditations_heading',
     'programs_heading', 'admission_heading', 'emi_heading', 'exam_heading',
