@@ -139,16 +139,26 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
     "specialization": {
-        "spec_total_fee": {
+        "duration": {
             "payload_sources": [
-                "spec_fee_table", "emi_details", "spec_facts",
+                "about_content", "eligibility_content",
+                "emi_content", "syllabus_content",
             ],
-            "heading_keywords": ["fee", "cost", "price", "payment"],
+            "heading_keywords": [
+                "fact", "detail", "about", "duration", "overview", "highlight",
+            ],
+            "extractor": "duration",
+        },
+        "total_fee": {
+            "payload_sources": [
+                "emi_content", "eligibility_content", "about_content",
+            ],
+            "heading_keywords": ["fee", "cost", "price", "payment", "emi"],
             "extractor": "fee",
         },
-        "spec_emi": {
+        "emi_amount": {
             "payload_sources": [
-                "spec_fee_table", "emi_details", "spec_facts",
+                "emi_content", "about_content",
             ],
             "heading_keywords": ["emi", "installment", "payment", "fee"],
             "extractor": "emi",
