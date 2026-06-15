@@ -271,6 +271,38 @@ def run_extraction_pipeline(
     # KV records always appended (even if superseded by LLM, keeps audit trail)
     mapping_records.extend(kv_records)
 
+    # ── Step 5.0: KV field alias remap ──────────────────────────────────────
+    # The KV parser uses generic field names that map correctly for university
+    # pages. For course and specialization pages some field names differ:
+    #
+    #   university     → course / specialization
+    #   ─────────────────────────────────────────
+    #   ugc_approved   → ugc_status
+    #   mode_of_learning → mode
+    #
+    # We remap those aliases NOW, before enrichment, so downstream steps
+    # (enricher, validator) see the correct field keys.
+    _KV_REMAP: dict[str, dict[str, str]] = {
+        "course": {
+            "ugc_approved":    "ugc_status",
+            "mode_of_learning": "mode",
+        },
+        "specialization": {
+            "ugc_approved":    "ugc_status",
+            "mode_of_learning": "mode",
+        },
+    }
+    if detected_type in _KV_REMAP:
+        alias_map = _KV_REMAP[detected_type]
+        for old_key, new_key in alias_map.items():
+            if old_key in payload and new_key not in payload:
+                payload[new_key] = payload.pop(old_key)
+                logger.info("KV_REMAP: %s → %s = %r", old_key, new_key, str(payload[new_key])[:80])
+            # Also fix the mapping record so the UI shows the right field key
+            for rec in mapping_records:
+                if rec["field_key"] == old_key:
+                    rec["field_key"] = new_key
+
     # ── Step 5: Enrich payload (regex, zero API calls) ──
     payload, enrichment_log = enrich_payload(payload, section_map, detected_type, filename=filename)
 

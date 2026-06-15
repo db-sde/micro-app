@@ -111,6 +111,11 @@ class ConfirmRequest(BaseModel):
     corrections: list[FieldCorrection]
 
 
+class PatchPayloadRequest(BaseModel):
+    payload: dict
+    page_type: str | None = None  # optional re-classification
+
+
 # ────────────────────────── helpers ──────────────────────────
 
 
@@ -377,6 +382,76 @@ async def confirm_fields(
     return {
         "upload_id": upload.id,
         "status": upload.status,
+        "validation": validation,
+        "field_mappings": [
+            {
+                "field_key": m.field_key,
+                "heading_in_doc": m.heading_in_doc,
+                "confidence": m.confidence,
+                "status": m.status,
+                "source": m.source,
+                "is_confirmed": m.is_confirmed,
+            }
+            for m in mappings
+        ],
+    }
+
+
+@app.patch("/payload/{upload_id}")
+async def patch_payload(
+    upload_id: int,
+    body: PatchPayloadRequest,
+    db: Session = Depends(get_db),
+):
+    """Overwrite the ACF payload for an upload with manually-edited content.
+
+    Optionally re-classifies the page type if ``page_type`` is supplied.
+    Re-runs validation and updates the quality score.
+    """
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
+    # Validate page_type if provided
+    allowed_types = ("university", "course", "specialization")
+    if body.page_type and body.page_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid page_type: {body.page_type!r}. Must be one of {allowed_types}.",
+        )
+
+    # Apply page type reclassification
+    if body.page_type:
+        upload.page_type = body.page_type
+
+    effective_page_type = upload.page_type or "university"
+
+    # Persist the edited payload
+    try:
+        upload.payload = json.dumps(body.payload, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid payload JSON: {exc}")
+
+    # Re-validate with the (possibly new) page type
+    validation = validate_payload(body.payload, effective_page_type)
+    upload.score = validation["summary"]["quality_score"]
+    upload.status = "confirmed"
+
+    db.commit()
+    db.refresh(upload)
+
+    # Return refreshed field mappings
+    mappings = (
+        db.query(FieldMapping)
+        .filter(FieldMapping.upload_id == upload_id)
+        .all()
+    )
+
+    return {
+        "upload_id": upload.id,
+        "page_type": upload.page_type,
+        "status": upload.status,
+        "payload": body.payload,
         "validation": validation,
         "field_mappings": [
             {

@@ -67,7 +67,11 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"university\s*full\s*name|full\s*name", "university_full_name"),
     # CDOE Year
     (r"cdoe(?:\s*year)?", "cdoe_year"),
-    # UGC Approval specifically
+    # UGC status — matched BEFORE the generic ugc_approved rule
+    # The service layer will remap ugc_approved → ugc_status for course/specialization
+    # but if the document key is literally 'ugc_status' we also capture it here.
+    (r"ugc[_\s]*status", "ugc_status"),
+    # UGC Approval (university pages)
     (r"ugc", "ugc_approved"),
     # NAAC grade specifically
     (r"naac\s*(?:grade|rating|score)?|grade", "naac_grade"),
