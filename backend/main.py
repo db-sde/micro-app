@@ -60,13 +60,11 @@ app = FastAPI(
     description="Parse .docx files, map content to WordPress ACF fields, and export JSON payloads.",
 )
 
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-origins = [origin.strip() for origin in frontend_url.split(",") if origin.strip()]
-
+# Allow all origins for parsing API endpoints
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
