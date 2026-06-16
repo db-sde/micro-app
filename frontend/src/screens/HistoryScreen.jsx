@@ -17,6 +17,7 @@ export default function HistoryScreen() {
   const [deleting, setDeleting] = useState(false);
 
   const fetchHistory = async () => {
+    console.log('hi')
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/history`);

@@ -110,5 +110,5 @@ The backend exposes the following endpoints (relative to `http://localhost:8000`
 
 ## Development Notes
 
-- **Database:** Uses PostgreSQL (integrated with Neon Serverless Postgres). Tables are automatically created/synced at backend startup via SQLAlchemy.
+- **Database:** Uses PostgreSQL (integrated with Neon Serverless Postgres). Tables are automatically created/synced at backend startup via SQLAlchemy..
 - **Background Workers:** Bulk zip files are processed sequentially in-process via FastAPI's `BackgroundTasks` helper. No Redis server or Celery worker execution is needed.
