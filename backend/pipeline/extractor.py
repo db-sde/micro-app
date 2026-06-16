@@ -139,7 +139,7 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
 # ────────────────────────── helpers ──────────────────────────
 
 
-def _call_claude(system: str, user_prompt: str) -> str:
+def call_claude(system: str, user_prompt: str) -> str:
     """Send a single message to Claude and return the text response."""
     client = _get_client()
     try:
@@ -163,7 +163,7 @@ def _ensure_dict(parsed: Any) -> dict[str, Any]:
         return parsed
     return {"value": parsed}
 
-def _parse_json_response(raw: str) -> dict[str, Any]:
+def parse_json_response(raw: str) -> dict[str, Any]:
     """Try to parse JSON from Claude's response.
 
     Falls back to regex extraction if the response is wrapped in markdown
@@ -204,7 +204,7 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
     return {"value": None, "parse_error": True}
 
 
-def _content_to_text(content: Any) -> str:
+def content_to_text(content: Any) -> str:
     """Flatten arbitrary section content into a text block for the prompt."""
     if isinstance(content, str):
         return content
@@ -239,7 +239,7 @@ def _content_to_text(content: Any) -> str:
         if "paragraphs" in content:
             sub_parts.append(str(content["paragraphs"]))
         if "tables" in content:
-            sub_parts.append(_content_to_text(content["tables"]))
+            sub_parts.append(content_to_text(content["tables"]))
         return "\n".join(sub_parts) if sub_parts else str(content)
     return str(content)
 
@@ -255,7 +255,7 @@ def extract_field(
     heading: str | None = None,
 ) -> dict[str, Any]:
     """Extract and format content for a single ACF field."""
-    text_block = _content_to_text(content)
+    text_block = content_to_text(content)
 
     if heading:
         # Strip internal tags like [about_heading] before passing to Claude
@@ -303,8 +303,8 @@ def _extract_text(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": "extracted text here"}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 def _extract_textarea(field_key: str, text_block: str) -> dict[str, Any]:
@@ -316,8 +316,8 @@ def _extract_textarea(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": "extracted text paragraph here"}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 def _extract_wysiwyg(field_key: str, text_block: str) -> dict[str, Any]:
@@ -330,8 +330,8 @@ def _extract_wysiwyg(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": "<p>…</p>"}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 def _extract_stat(field_key: str, text_block: str) -> dict[str, Any]:
@@ -347,8 +347,8 @@ def _extract_stat(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": "…"}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    result = _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    result = parse_json_response(raw)
 
     # Treat "Not found" as None
     if isinstance(result.get("value"), str) and result["value"].strip().lower() in (
@@ -372,8 +372,8 @@ def _extract_table(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": [{{...}}, {{...}}]}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    result = _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    result = parse_json_response(raw)
 
     # Validate that value is actually a list
     val = result.get("value")
@@ -403,8 +403,8 @@ def _extract_bullet(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": ["item 1", "item 2", …]}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 def _extract_faq(field_key: str, text_block: str) -> dict[str, Any]:
@@ -416,8 +416,8 @@ def _extract_faq(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY: {{"value": [{{"question":"…","answer":"…"}}]}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:
@@ -429,8 +429,8 @@ def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:
         f"Content:\n{text_block}\n\n"
         f'Return ONLY a valid JSON array: {{"value": [{{...}}, {{...}}]}}'
     )
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    result = _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    result = parse_json_response(raw)
 
     val = result.get("value")
     
@@ -506,8 +506,8 @@ def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str,
         f"Return ONLY a valid JSON object with keys: {', '.join(target_fields)}."
     )
 
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    return _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    return parse_json_response(raw)
 
 
 
@@ -529,7 +529,7 @@ def confirm_mapping(
     """
     fields_desc = {f["key"]: f["embed"] for f in ACF_FIELDS.get(page_type, [])}
     field_desc = fields_desc.get(candidate_field, candidate_field)
-    text_block = _content_to_text(content)
+    text_block = content_to_text(content)
     preview = text_block[:500]
 
     prompt = (
@@ -543,8 +543,8 @@ def confirm_mapping(
         f'"reason": "brief explanation"}}'
     )
 
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    result = _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    result = parse_json_response(raw)
 
     # Ensure required keys exist
     if "confirmed" not in result:
@@ -574,7 +574,7 @@ def resolve_ambiguous(
     Returns ``{"field_key": str, "confidence": float, "reason": str}``.
     """
     fields_desc = {f["key"]: f["embed"] for f in ACF_FIELDS.get(page_type, [])}
-    text_block = _content_to_text(content)
+    text_block = content_to_text(content)
     preview = text_block[:500]
 
     options = "\n".join(
@@ -592,8 +592,8 @@ def resolve_ambiguous(
         f'"confidence": 0.0_to_1.0, "reason": "brief explanation"}}'
     )
 
-    raw = _call_claude(SYSTEM_PROMPT, prompt)
-    result = _parse_json_response(raw)
+    raw = call_claude(SYSTEM_PROMPT, prompt)
+    result = parse_json_response(raw)
 
     # Normalise
     if "field_key" not in result:
