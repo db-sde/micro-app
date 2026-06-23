@@ -253,6 +253,7 @@ def extract_field(
     content: Any,
     section_map_entry: dict[str, Any] | None = None,
     heading: str | None = None,
+    page_type: str = "",
 ) -> dict[str, Any]:
     """Extract and format content for a single ACF field."""
     text_block = content_to_text(content)
@@ -271,6 +272,9 @@ def extract_field(
 
     # Prepend field-specific extraction hint if available
     hint = FIELD_EXTRACTION_HINTS.get(field_key, "")
+    if field_key == "total_fee" and page_type == "specialization":
+        hint = "IMPORTANT: For the total fee, please extract BOTH the total fee amount AND the complete semester-wise or year-wise fee breakdown if it is available in the text. Format it clearly as a single plain text string without markdown."
+        
     if hint:
         text_block = hint + "\n\n" + text_block
 

@@ -675,7 +675,7 @@ def _extract_assignments(
         content = assignment["content"]
         
         try:
-            extracted = extract_field(chosen_field, ft, content, heading=heading)
+            extracted = extract_field(chosen_field, ft, content, heading=heading, page_type=page_type)
         except Exception as exc:
             logger.warning("extract_field(%s) failed: %s", chosen_field, exc)
             extracted = {"value": None, "error": str(exc)}

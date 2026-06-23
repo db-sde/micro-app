@@ -127,7 +127,7 @@ ACF_FIELDS = {
         {'key': 'mode',               'type': TEXT,     'embed': 'mode online offline hybrid learning delivery'},
         {'key': 'naac_grade',         'type': STAT,     'embed': 'naac grade accreditation A A+ rating'},
         {'key': 'ugc_status',         'type': TEXT,     'embed': 'ugc status entitled approved recognition'},
-        {'key': 'total_fee',          'type': STAT,     'embed': 'total fee best price complete course fee cost'},
+        {'key': 'total_fee',          'type': TEXT,     'embed': 'total fee best price complete course fee cost semester breakdown'},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',     'type': TEXT, 'embed': 'highlights heading title'},
