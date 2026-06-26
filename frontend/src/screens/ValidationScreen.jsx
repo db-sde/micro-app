@@ -4,6 +4,8 @@ import {
   TopBar, StepIndicator, StatusBadge, ConfidenceBar,
   QualityScoreBadge, LoadingSpinner, showToast
 } from '../components/Components';
+import DynamicFormRenderer from '../components/DynamicFormRenderer';
+
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -171,6 +173,8 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
   const [jsonError, setJsonError] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState(initialPayload || {});
+
 
   const prettyJson = initialPayload ? JSON.stringify(initialPayload, null, 2) : '{}';
 
@@ -178,11 +182,12 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
   useEffect(() => {
     if (isOpen) {
       setEditText(prettyJson);
+      setFormData(initialPayload || {});
       setJsonError('');
       setTab('view');
       setGuideOpen(false);
     }
-  }, [isOpen, prettyJson]);
+  }, [isOpen, prettyJson, initialPayload]);
 
   // Escape key
   useEffect(() => {
@@ -201,11 +206,18 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
     const val = e.target.value;
     setEditText(val);
     try {
-      JSON.parse(val);
+      const parsed = JSON.parse(val);
+      setFormData(parsed);
       setJsonError('');
     } catch (err) {
       setJsonError(err.message);
     }
+  };
+
+  const handleFormChange = (newData) => {
+    setFormData(newData);
+    setEditText(JSON.stringify(newData, null, 2));
+    setJsonError('');
   };
 
   const handleCopy = useCallback(() => {
@@ -319,7 +331,8 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
         }}>
           {[
             { key: 'view', label: '👁  View' },
-            { key: 'edit', label: '✏️  Edit' },
+            { key: 'form', label: '📝  Smart Form' },
+            { key: 'edit', label: '✏️  Raw JSON' },
           ].map((t) => (
             <button
               key={t.key}
@@ -405,6 +418,10 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
               }}>
                 <JsonSyntaxHighlight json={prettyJson} />
               </pre>
+            </div>
+          ) : tab === 'form' ? (
+            <div style={{ flex: 1, overflow: 'auto', background: '#F8FAFC' }}>
+              <DynamicFormRenderer data={formData} onChange={handleFormChange} />
             </div>
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
