@@ -121,7 +121,7 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
 # Optional value extractors for fields where we can do better than raw text
 _VALUE_EXTRACTORS: dict[str, re.Pattern[str]] = {
     "established_year": re.compile(r"\b(19|20)\d{2}\b"),
-    "naac_grade":       re.compile(r"\b[A-F]\+{0,2}\b"),
+    "naac_grade":       re.compile(r"\b[A-F]\+{0,2}(?!\w)"),
     "total_fee":        re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+(?:\s*/\-)?"),
     "duration":         re.compile(r"\d+\s*(?:year|month|semester)s?", re.IGNORECASE),
     "validity":         re.compile(r"\d+\s*(?:year|month)s?", re.IGNORECASE),
