@@ -263,11 +263,16 @@ def run_extraction_pipeline(
     #   Pass 2 — extract content for each assigned field (Claude calls)
     payload, mapping_records = _extract_assignments(assignments, detected_type)
 
-    # ── Merge KV pre-pass results (fills gaps not covered by LLM) ──
+    # ── Merge KV pre-pass results (overrides LLM extraction) ──
     for fkey, fval in kv_payload.items():
-        if payload.get(fkey) is None:
-            payload[fkey] = fval
-            logger.info("KV_MERGED: %s = %r", fkey, str(fval)[:120])
+        if payload.get(fkey) is not None:
+            logger.info("KV_OVERRIDE: overriding %s with KV value %r", fkey, str(fval)[:120])
+            # Remove the superseded LLM mapping record so the UI isn't confused
+            mapping_records = [r for r in mapping_records if r["field_key"] != fkey]
+            
+        payload[fkey] = fval
+        logger.info("KV_MERGED: %s = %r", fkey, str(fval)[:120])
+        
     # KV records always appended (even if superseded by LLM, keeps audit trail)
     mapping_records.extend(kv_records)
 

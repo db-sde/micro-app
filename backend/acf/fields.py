@@ -54,7 +54,7 @@ ACF_FIELDS = {
         {'key': 'faculty_members',    'type': JSON_ARRAY, 'embed': 'faculty members professors teachers name qualification designation',
          'sub_fields': [{'key': 'member_name', 'type': TEXT}, {'key': 'member_program', 'type': TEXT}, {'key': 'member_designation', 'type': TEXT}, {'key': 'member_qualification', 'type': TEXT}]},
         {'key': 'reviews',            'type': JSON_ARRAY, 'embed': 'student reviews testimonials feedback ratings opinions experiences',
-         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_label', 'type': TEXT}]},
+         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_name', 'type': TEXT}, {'key': 'reviewer_label', 'type': TEXT}]},
         {'key': 'faqs',               'type': JSON_ARRAY, 'embed': 'faqs frequently asked questions answers common queries',
          'sub_fields': [{'key': 'question', 'type': TEXT}, {'key': 'answer', 'type': TEXTAREA}]},
         # SEO
@@ -107,7 +107,7 @@ ACF_FIELDS = {
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities positions average salary',
          'sub_fields': [{'key': 'job_title', 'type': TEXT}, {'key': 'avg_salary', 'type': TEXT}]},
         {'key': 'reviews',              'type': JSON_ARRAY, 'embed': 'student reviews testimonials feedback ratings opinions',
-         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_label', 'type': TEXT}]},
+         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_name', 'type': TEXT}, {'key': 'reviewer_label', 'type': TEXT}]},
         {'key': 'faqs',                 'type': JSON_ARRAY, 'embed': 'faqs frequently asked questions answers common queries',
          'sub_fields': [{'key': 'question', 'type': TEXT}, {'key': 'answer', 'type': TEXTAREA}]},
         # SEO
@@ -160,7 +160,7 @@ ACF_FIELDS = {
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities average salary',
          'sub_fields': [{'key': 'job_title', 'type': TEXT}, {'key': 'avg_salary', 'type': TEXT}]},
         {'key': 'reviews',              'type': JSON_ARRAY, 'embed': 'student reviews testimonials feedback ratings opinions',
-         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_label', 'type': TEXT}]},
+         'sub_fields': [{'key': 'review_text', 'type': TEXTAREA}, {'key': 'reviewer_name', 'type': TEXT}, {'key': 'reviewer_label', 'type': TEXT}]},
         {'key': 'faqs',                 'type': JSON_ARRAY, 'embed': 'faqs frequently asked questions answers',
          'sub_fields': [{'key': 'question', 'type': TEXT}, {'key': 'answer', 'type': TEXTAREA}]},
         # SEO

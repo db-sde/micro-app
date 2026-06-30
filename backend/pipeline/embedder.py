@@ -39,8 +39,38 @@ for page_type, fields_list in ACF_FIELDS.items():
     }
 
 
+import re
+
 # ────────────────────────── helpers ──────────────────────────
 
+def _is_exact_match(heading: str, field_key: str, field_embed_str: str) -> bool:
+    """Check if the heading contains the exact field name or a primary synonym."""
+    h_lower = heading.lower()
+    
+    # 1. Field key base
+    core_key = field_key.replace('_content', '').replace('_table', '').replace('_members', '')
+    core_key = core_key.replace('_plans', '').replace('_profiles', '').replace('_steps', '')
+    core_key = core_key.replace('_intro', '')
+    core_key = core_key.replace('_', ' ')
+    
+    if len(core_key) > 3 and re.search(rf'\b{re.escape(core_key)}\b', h_lower):
+        return True
+        
+    # 2. First 1-3 words of the embed string (usually the exact synonym, e.g. "why choose")
+    embed_words = field_embed_str.split()
+    if len(embed_words) >= 1 and len(embed_words[0]) > 3:
+        if re.search(rf'\b{re.escape(embed_words[0])}\b', h_lower):
+            return True
+    if len(embed_words) >= 2:
+        two_words = f"{embed_words[0]} {embed_words[1]}"
+        if len(two_words) > 5 and re.search(rf'\b{re.escape(two_words)}\b', h_lower):
+            return True
+    if len(embed_words) >= 3:
+        three_words = f"{embed_words[0]} {embed_words[1]} {embed_words[2]}"
+        if len(three_words) > 8 and re.search(rf'\b{re.escape(three_words)}\b', h_lower):
+            return True
+            
+    return False
 
 def _get_client() -> OpenAI:
     global _client
@@ -195,7 +225,11 @@ def match_headings_to_fields(
         scored: list[dict[str, Any]] = []
         for field_key, field_data in field_idx.items():
             sim = cosine_similarity(h_vec, field_data["vector"])
-            scored.append({"field_key": field_key, "score": round(sim, 4)})
+            
+            if _is_exact_match(heading, field_key, field_data["description"]):
+                sim = 1.0  # Exact match overrides embedding score
+                
+            scored.append({"field_key": field_key, "score": min(round(sim, 4), 1.0)})
 
         # Sort descending by score
         scored.sort(key=lambda x: x["score"], reverse=True)

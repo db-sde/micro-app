@@ -82,7 +82,7 @@ highlights:       [{"highlight_title": "Industry Mentors", "highlight_descriptio
 fee_plans:        [{"plan_name": "Semester Plan", "plan_amount": "₹25,000", "plan_total": "Year I"}]
 other_specs:      [{"other_spec_name": "Finance", "other_spec_fee": "₹1,75,000"}]
 job_profiles:     [{"job_title": "Business Analyst", "avg_salary": "INR 5 LPA"}]
-reviews:          [{"review_text": "Great experience...", "reviewer_label": "MBA Graduate, 2024"}]
+reviews:          [{"review_text": "Great experience...", "reviewer_name": "Rahul S.", "reviewer_label": "MBA Graduate, 2024"}]
 faqs:             [{"question": "Is the degree valid?", "answer": "Yes, UGC entitled."}]
 """
 
@@ -120,7 +120,8 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
     "reviews": (
         "Extract individual student reviews or testimonials as separate items. "
         "Each paragraph or block is typically one review. "
-        "Return a JSON array of objects with keys 'review_text' and 'reviewer_label'. "
+        "Return a JSON array of objects with keys 'review_text', 'reviewer_name', and 'reviewer_label'. "
+        "'reviewer_name' should be the name of the student or reviewer. If none is found, use 'Anonymous'. "
         "'reviewer_label' should be the reviewer's role or identity if mentioned "
         "(e.g. 'MBA Student', 'Working Professional', 'Graduate 2024'). "
         "If no label is present for a review, use 'Student' as the default — never null."

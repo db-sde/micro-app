@@ -49,7 +49,7 @@ const FIELD_TYPE_GUIDE = [
   {
     type: 'reviews  (json_array)',
     format: 'Array of objects',
-    example: '[{"review_text": "Great learning experience!", "reviewer_label": "MBA Student 2023"}]',
+    example: '[{"review_text": "Great learning experience!", "reviewer_name": "Rahul S.", "reviewer_label": "MBA Student 2023"}]',
   },
   {
     type: 'accreditations  (json_array)',
