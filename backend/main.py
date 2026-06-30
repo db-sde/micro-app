@@ -43,6 +43,7 @@ from pipeline.embedder import match_headings_to_fields, initialize_field_index
 from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.validator import validate_payload
 from pipeline.service import run_extraction_pipeline
+from pipeline.blog_pipeline import generate_blog_summary
 
 # ────────────────────────── logging ──────────────────────────
 
@@ -299,6 +300,46 @@ async def upload_docx(
     except Exception as exc:
         logger.error("Pipeline failed: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}")
+
+
+@app.post("/upload-blog")
+async def upload_blog_docx(
+    file: UploadFile = File(...),
+    page_type: str = Form(default="blog"),
+):
+    """Upload a .docx file for a blog/category page and get a 4-5 point summary."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided.")
+
+    if not file.filename.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .docx files are supported. Received: " + file.filename,
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        # Extract raw text from the document
+        parsed_data = parse_docx(file_bytes)
+        raw_text = parsed_data.get("raw_text", "")
+        
+        if not raw_text.strip():
+            raise ValueError("No text could be extracted from the document.")
+            
+        # Generate the summary via Claude
+        summary_html = generate_blog_summary(raw_text, page_type)
+        
+        return {
+            "filename": file.filename,
+            "page_type": page_type,
+            "summary": summary_html
+        }
+    except Exception as exc:
+        logger.error("Blog pipeline failed: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Blog pipeline error: {exc}")
 
 
 @app.post("/confirm/{upload_id}")

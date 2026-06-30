@@ -8,6 +8,7 @@ import ValidationScreen from './screens/ValidationScreen';
 import MappingScreen from './screens/MappingScreen';
 import BulkScreen from './screens/BulkScreen';
 import HistoryScreen from './screens/HistoryScreen';
+import BlogSummarizerScreen from './screens/BlogSummarizerScreen';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/upload/:uploadId/validation" element={<ValidationScreen />} />
           <Route path="/upload/:uploadId/mapping" element={<MappingScreen />} />
           <Route path="/bulk" element={<BulkScreen />} />
+          <Route path="/blog-summarizer" element={<BlogSummarizerScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
         </Routes>
       </main>
