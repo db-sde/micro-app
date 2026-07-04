@@ -100,6 +100,21 @@ _EMI_PATTERNS = [
         r"(" + _NUMBER + r")\s*(?:per|/)\s*month\b",
         re.IGNORECASE,
     ),
+    # "INR 7,292 /- for a duration of 24 months"  (amount followed by months)
+    re.compile(
+        _CURRENCY_PREFIX + r"(" + _NUMBER + r")\s*/?-?\s*(?:for\s+(?:a\s+)?(?:duration\s+of\s+)?\d+\s+months?)",
+        re.IGNORECASE,
+    ),
+    # "monthly ... INR 7,292"  or  "monthly EMI ... INR 7,292"
+    re.compile(
+        r"monthly\s+(?:[\w\s]{0,40}?)?" + _CURRENCY_PREFIX + r"(" + _NUMBER + r")",
+        re.IGNORECASE,
+    ),
+    # "no-cost EMI ... INR 7,292"  broad EMI sentence capture
+    re.compile(
+        r"(?:no[\s-]cost\s+)?emi[\s\w,]{1,80}?" + _CURRENCY_PREFIX + r"(" + _NUMBER + r")",
+        re.IGNORECASE,
+    ),
 ]
 
 # Generic currency pattern — used as fallback for fee detection
@@ -132,7 +147,7 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
         },
         "emi_amount": {
             "payload_sources": [
-                "fee_structure", "emi_details", "course_facts",
+                "emi_content", "emi_details", "fee_structure", "course_facts",
             ],
             "heading_keywords": ["emi", "installment", "payment", "fee"],
             "extractor": "emi",
@@ -158,9 +173,9 @@ _ENRICHMENT_MAP: dict[str, dict[str, dict[str, Any]]] = {
         },
         "emi_amount": {
             "payload_sources": [
-                "about_content",
+                "emi_content", "emi_details", "about_content", "total_fee",
             ],
-            "heading_keywords": ["emi", "installment", "payment", "fee"],
+            "heading_keywords": ["emi", "installment", "payment", "fee", "detail"],
             "extractor": "emi",
         },
     },
@@ -496,6 +511,13 @@ def _enrich_course_stats(
             payload["university_name"] = uni.title()
             enrichment_log.append({"field_key": "university_name", "status": "enriched", "source": "filename"})
             logger.info("ENRICHED: university_name = %r (source=filename)", uni)
+
+    # ── linked_university (Course only) ──────────────────────────
+    if page_type == "course" and not payload.get("linked_university"):
+        if payload.get("university_name"):
+            payload["linked_university"] = payload["university_name"]
+            enrichment_log.append({"field_key": "linked_university", "status": "enriched", "source": "university_name"})
+            logger.info("ENRICHED: linked_university = %r (source=university_name)", payload["linked_university"])
 
     # ── mode: from hero_description or highlights ─────────────────
     if not payload.get("mode"):

@@ -63,6 +63,9 @@ def looks_like_kv_section(raw_text: str) -> bool:
 # Each pattern is a SEMANTIC concept, not institution-specific wording.
 # Ordered: more specific patterns first.
 _KV_FIELD_MAP: list[tuple[str, str]] = [
+    # Linked relationships
+    (r"linked[\s_]*university", "linked_university"),
+    (r"linked[\s_]*course|linked[\s_]*program", "linked_course"),
     # University Full Name
     (r"university\s*full\s*name|full\s*name", "university_full_name"),
     # CDOE Year
@@ -107,8 +110,10 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"validity|valid\s*(?:for|period|years?)|degree\s*validity",
                                                               "validity"),
     # EMI
-    (r"emi|monthly\s*(?:installment|payment)|pay\s*per\s*month",
-                                                              "emi_amount"),
+    (
+    r"\b(?:emi|monthly\s*(?:installment|payment)|pay\s*per\s*month)\b",
+    "emi_amount",
+),
     # Lateral entry / eligibility shortcuts
     (r"eligib|who\s*can\s*apply|qualif",                      "eligibility"),
     # Exam / assessment

@@ -12,9 +12,11 @@ export default function BlogSummarizerScreen() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   
-  const [result, setResult] = useState(null); // { summary: string (JSON), filename: string }
+  const [result, setResult] = useState(null); // { payload: {complete_page_summary, seo_title, meta_description}, filename: string }
   const [editedJson, setEditedJson] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
+  const [previewSeoTitle, setPreviewSeoTitle] = useState('');
+  const [previewMetaDesc, setPreviewMetaDesc] = useState('');
   const [jsonError, setJsonError] = useState('');
 
   const handleFileDrop = (f) => {
@@ -54,7 +56,9 @@ export default function BlogSummarizerScreen() {
 
       const data = await res.json();
       setResult(data);
-      setEditedJson(data.summary);
+      // Support both old (data.summary string) and new (data.payload object) response shapes
+      const payloadObj = data.payload || {};
+      setEditedJson(JSON.stringify(payloadObj, null, 2));
       showToast('Summary generated successfully!', 'success');
     } catch (err) {
       const friendlyError = "We ran into an issue generating the summary. Please check your document and try again.";
@@ -70,6 +74,8 @@ export default function BlogSummarizerScreen() {
     try {
       const parsed = JSON.parse(editedJson);
       setPreviewHtml(parsed.complete_page_summary || '');
+      setPreviewSeoTitle(parsed.seo_title || '');
+      setPreviewMetaDesc(parsed.meta_description || '');
       setJsonError('');
     } catch (e) {
       setJsonError('Please ensure the JSON brackets and quotes are formatted correctly.');
@@ -95,7 +101,7 @@ export default function BlogSummarizerScreen() {
 
   return (
     <div id="blog-summarizer-screen">
-      <TopBar title="Blog & Category Summarizer" subtitle="Generate a 4-5 point engaging summary" />
+      <TopBar title="Blog & Category Summarizer" subtitle="Generate summary, SEO title & meta description" />
 
       <div className="card" style={{ 
         maxWidth: result ? 1200 : 720, 
@@ -121,7 +127,7 @@ export default function BlogSummarizerScreen() {
               }}>
                 <div>
                   <h3 style={{ fontSize: '1.35rem', color: 'var(--color-text-main)', margin: 0, fontWeight: 600 }}>
-                    Summary Generated
+                    Summary & SEO Generated
                   </h3>
                   <div style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
                     Source file: {result.filename}
@@ -198,51 +204,85 @@ export default function BlogSummarizerScreen() {
                 </div>
 
                 {/* UI/UX PREVIEW WINDOW */}
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ 
-                    padding: '12px 18px', 
-                    background: 'var(--color-bg-alt)', 
-                    border: '1px solid var(--color-border-main)',
-                    borderBottom: 'none',
-                    borderTopLeftRadius: 'var(--radius-md)',
-                    borderTopRightRadius: 'var(--radius-md)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-success)' }} />
-                    <span style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.95rem' }}>Live UI Preview</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>REAL-TIME</span>
-                  </div>
-                  <div 
-                    style={{
-                      flex: 1,
-                      minHeight: '450px',
-                      padding: '32px',
-                      borderBottomLeftRadius: 'var(--radius-md)',
-                      borderBottomRightRadius: 'var(--radius-md)',
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  {/* HTML Summary Preview */}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ 
+                      padding: '12px 18px', 
+                      background: 'var(--color-bg-alt)', 
                       border: '1px solid var(--color-border-main)',
-                      background: 'white',
-                      color: '#1f2937',
-                      overflowY: 'auto',
-                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
-                    }}
-                  >
-                    {jsonError ? (
-                      <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', textAlign: 'center', marginTop: 40 }}>
-                        Preview is paused while you fix the JSON formatting.
-                      </div>
-                    ) : (
-                      <div 
-                        className="live-preview-content"
-                        dangerouslySetInnerHTML={{ __html: previewHtml }}
-                        style={{
-                          lineHeight: '1.8',
-                          fontSize: '1.05rem',
-                        }}
-                      />
-                    )}
+                      borderBottom: 'none',
+                      borderTopLeftRadius: 'var(--radius-md)',
+                      borderTopRightRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8
+                    }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-success)' }} />
+                      <span style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.95rem' }}>Live Summary Preview</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>REAL-TIME</span>
+                    </div>
+                    <div 
+                      style={{
+                        flex: 1,
+                        minHeight: '260px',
+                        padding: '24px',
+                        borderBottomLeftRadius: 'var(--radius-md)',
+                        borderBottomRightRadius: 'var(--radius-md)',
+                        border: '1px solid var(--color-border-main)',
+                        background: 'white',
+                        color: '#1f2937',
+                        overflowY: 'auto',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
+                      }}
+                    >
+                      {jsonError ? (
+                        <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', textAlign: 'center', marginTop: 40 }}>
+                          Preview is paused while you fix the JSON formatting.
+                        </div>
+                      ) : (
+                        <div 
+                          className="live-preview-content"
+                          dangerouslySetInnerHTML={{ __html: previewHtml }}
+                          style={{ lineHeight: '1.8', fontSize: '1.05rem' }}
+                        />
+                      )}
+                    </div>
                   </div>
+
+                  {/* SEO Fields Preview */}
+                  {!jsonError && (previewSeoTitle || previewMetaDesc) && (
+                    <div style={{
+                      padding: '20px 24px',
+                      border: '1px solid var(--color-border-main)',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--color-bg-alt)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 16,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.9rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>SEO Fields</span>
+                      </div>
+                      {previewSeoTitle && (
+                        <div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>SEO Title</div>
+                          <div style={{ fontSize: '1rem', color: '#1a0dab', fontWeight: 500 }}>{previewSeoTitle}</div>
+                          <div style={{ fontSize: '0.78rem', color: previewSeoTitle.length > 60 ? 'var(--color-error)' : 'var(--color-text-muted)', marginTop: 4 }}>{previewSeoTitle.length} / 60 chars</div>
+                        </div>
+                      )}
+                      {previewMetaDesc && (
+                        <div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Meta Description</div>
+                          <div style={{ fontSize: '0.93rem', color: '#006621' }}>{previewMetaDesc}</div>
+                          <div style={{ fontSize: '0.78rem', color: previewMetaDesc.length > 160 ? 'var(--color-error)' : 'var(--color-text-muted)', marginTop: 4 }}>{previewMetaDesc.length} / 160 chars</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
               </div>

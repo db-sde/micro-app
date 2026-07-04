@@ -6,8 +6,8 @@ STAT       = 'stat'
 IMAGE      = 'image'
 RELATION   = 'relation'
 
-# Fields that should never be extracted from Word — output null, not missing
-SKIP_EXTRACTION_FIELDS = {'linked_university', 'linked_course'}
+# Fields that are purely structural or managed differently and should not be extracted from docx.
+SKIP_EXTRACTION_FIELDS = set()
 
 ACF_FIELDS = {
 
@@ -167,6 +167,20 @@ ACF_FIELDS = {
         {'key': 'seo_title',            'type': TEXT,     'embed': 'seo title meta title page title 50-60 chars'},
         {'key': 'meta_description',     'type': TEXTAREA, 'embed': 'meta description seo search snippet 140-160 chars'},
         {'key': 'eligibility_summary',  'type': TEXT,     'embed': 'eligibility summary short one line for comparison'},
+    ],
+
+    'blog': [
+        # AI-generated summary and SEO fields — same structure for blog and category
+        {'key': 'complete_page_summary', 'type': HTML, 'embed': 'complete page summary bullet points overview content highlights'},
+        {'key': 'seo_title',             'type': TEXT, 'embed': 'seo title meta title page title search engine 50-60 chars'},
+        {'key': 'meta_description',      'type': TEXTAREA, 'embed': 'meta description seo search snippet 140-160 chars'},
+    ],
+
+    'category': [
+        # AI-generated summary and SEO fields — same structure for blog and category
+        {'key': 'complete_page_summary', 'type': HTML, 'embed': 'complete page summary bullet points overview content highlights'},
+        {'key': 'seo_title',             'type': TEXT, 'embed': 'seo title meta title page title search engine 50-60 chars'},
+        {'key': 'meta_description',      'type': TEXTAREA, 'embed': 'meta description seo search snippet 140-160 chars'},
     ],
 }
 

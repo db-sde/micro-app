@@ -329,13 +329,19 @@ async def upload_blog_docx(
         if not raw_text.strip():
             raise ValueError("No text could be extracted from the document.")
             
-        # Generate the summary via Claude
-        summary_html = generate_blog_summary(raw_text, page_type)
+        # Generate summary + SEO fields via Claude
+        result_json = generate_blog_summary(raw_text, page_type)
+        
+        # Parse the structured result
+        try:
+            result_data = json.loads(result_json)
+        except json.JSONDecodeError:
+            result_data = {"complete_page_summary": result_json, "seo_title": "", "meta_description": ""}
         
         return {
             "filename": file.filename,
             "page_type": page_type,
-            "summary": summary_html
+            "payload": result_data,
         }
     except Exception as exc:
         logger.error("Blog pipeline failed: %s\n%s", exc, traceback.format_exc())

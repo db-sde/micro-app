@@ -176,11 +176,17 @@ def run_extraction_pipeline(
     for heading, section_data in list(section_map.items()):
         if heading.startswith("__"):
             continue
+        original_heading = section_data.get("original_heading", heading)
         raw_content = flatten_section_to_text(section_data.get("content", ""))
-        if not raw_content or not looks_like_kv_section(raw_content):
+        
+        # Prepend original heading to content so KV parser can catch keys
+        # that were accidentally absorbed into the docx heading.
+        combined_text = f"{original_heading}\n{raw_content}"
+
+        if not raw_content or not looks_like_kv_section(combined_text):
             continue
 
-        kv_fields = parse_kv_section(raw_content)
+        kv_fields = parse_kv_section(combined_text)
         if not kv_fields:
             continue
 

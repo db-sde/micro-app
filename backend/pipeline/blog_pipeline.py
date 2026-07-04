@@ -1,6 +1,7 @@
 import logging
 from anthropic import Anthropic
 import os
+import json
 
 logger = logging.getLogger("degreebaba.blog_pipeline")
 
@@ -33,14 +34,21 @@ RULES:
 - DO NOT add introductory or concluding sentences.
 """
 
+SEO_SYSTEM_PROMPT = """\
+You are an SEO expert for an education platform. Generate concise, compelling SEO fields for a blog or category page.
+Return ONLY valid JSON, no markdown, no explanation.
+"""
+
+
 def generate_blog_summary(text: str, page_type: str = "blog") -> str:
-    """Generate a 4-5 point bulleted summary of the provided text using Claude."""
+    """Generate a 4-5 point bulleted summary, SEO title and meta description for the provided text using Claude."""
     logger.info("Generating summary for %s (len: %d chars)", page_type, len(text))
     client = _get_client()
     
     user_prompt = f"Please read the following {page_type} content and generate the 4-5 point HTML bulleted summary:\n\n<content>\n{text}\n</content>"
     
     try:
+        # ── Step 1: Generate the page summary ──
         response = client.messages.create(
             model=_MODEL,
             max_tokens=800,
@@ -62,10 +70,54 @@ def generate_blog_summary(text: str, page_type: str = "blog") -> str:
             raw = raw[3:]
         if raw.endswith("```"):
             raw = raw[:-3]
-            
-        import json
+
+        summary_html = raw.strip()
+
+        # ── Step 2: Generate SEO title and meta description ──
+        page_label = page_type.capitalize()
+        seo_prompt = (
+            f"Generate SEO fields for the following {page_label} page content.\n\n"
+            f"Rules:\n"
+            f"- seo_title: 50-60 characters, compelling, keyword-rich title for search engines.\n"
+            f"- meta_description: 140-160 characters, compelling search snippet that drives clicks.\n\n"
+            f"Content (truncated):\n{text[:1500]}\n\n"
+            f'Return ONLY a valid JSON object: {{"seo_title": "...", "meta_description": "..."}}'
+        )
+
+        seo_response = client.messages.create(
+            model=_MODEL,
+            max_tokens=400,
+            temperature=0.3,
+            system=SEO_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": seo_prompt}],
+        )
+        seo_raw = ""
+        for block in seo_response.content:
+            if hasattr(block, "text"):
+                seo_raw += block.text
+
+        seo_raw = seo_raw.strip()
+        # Strip markdown fences if present
+        if seo_raw.startswith("```"):
+            seo_raw = seo_raw.split("\n", 1)[-1]
+        if seo_raw.endswith("```"):
+            seo_raw = seo_raw.rsplit("```", 1)[0]
+
+        # Parse the SEO JSON safely
+        seo_title = ""
+        meta_description = ""
+        try:
+            seo_data = json.loads(seo_raw.strip())
+            seo_title = seo_data.get("seo_title", "")
+            meta_description = seo_data.get("meta_description", "")
+        except (json.JSONDecodeError, AttributeError):
+            logger.warning("Failed to parse SEO JSON from: %s", seo_raw[:200])
+
+        # ── Combine and return all fields ──
         payload = {
-            "complete_page_summary": raw.strip()
+            "complete_page_summary": summary_html,
+            "seo_title": seo_title,
+            "meta_description": meta_description,
         }
         return json.dumps(payload, indent=2)
     except Exception as exc:

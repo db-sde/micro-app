@@ -137,3 +137,18 @@ This document lists **ALL** the Advanced Custom Fields (ACF) that need to be cre
 | `meta_description` | textarea | - |
 | `eligibility_summary` | text | - |
 
+## Blog Fields
+
+| Field Name (Key) | ACF Field Type | Sub-fields (For Repeaters) |
+|------------------|----------------|----------------------------|
+| `complete_page_summary` | wysiwyg | - |
+| `seo_title` | text | - |
+| `meta_description` | textarea | - |
+
+## Category Fields
+
+| Field Name (Key) | ACF Field Type | Sub-fields (For Repeaters) |
+|------------------|----------------|----------------------------|
+| `complete_page_summary` | wysiwyg | - |
+| `seo_title` | text | - |
+| `meta_description` | textarea | - |

@@ -94,7 +94,7 @@ function buildFieldRows(uploadData) {
     const value = uploadData.payload?.[fr.field_key];
     let charCount = 0;
     let preview = '—';
-    const isSkipped = ['hero_image', 'linked_university', 'linked_course'].includes(fr.field_key);
+    const isSkipped = ['hero_image'].includes(fr.field_key);
 
     if (isSkipped) {
       preview = 'Set manually in WordPress';
