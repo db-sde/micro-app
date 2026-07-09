@@ -348,6 +348,49 @@ async def upload_blog_docx(
         raise HTTPException(status_code=500, detail=f"Blog pipeline error: {exc}")
 
 
+@app.get("/upload/{upload_id}")
+async def get_upload(upload_id: int, db: Session = Depends(get_db)):
+    """Get the full upload data including payload and mappings."""
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
+    existing_payload: dict[str, Any] = {}
+    if upload.payload:
+        try:
+            existing_payload = json.loads(upload.payload)
+        except json.JSONDecodeError:
+            pass
+
+    validation = validate_payload(existing_payload, upload.page_type or "university")
+
+    mappings = (
+        db.query(FieldMapping)
+        .filter(FieldMapping.upload_id == upload_id)
+        .all()
+    )
+
+    return {
+        "id": upload.id,
+        "filename": upload.filename,
+        "page_type": upload.page_type,
+        "status": upload.status,
+        "score": upload.score,
+        "payload": existing_payload,
+        "validation": validation,
+        "field_mappings": [
+            {
+                "field_key": m.field_key,
+                "heading_in_doc": m.heading_in_doc,
+                "confidence": m.confidence,
+                "status": m.status,
+                "source": m.source,
+                "is_confirmed": m.is_confirmed,
+            }
+            for m in mappings
+        ],
+    }
+
 @app.post("/confirm/{upload_id}")
 async def confirm_fields(
     upload_id: int,

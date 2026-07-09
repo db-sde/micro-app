@@ -141,6 +141,23 @@ export default function BulkScreen() {
               id="bulk-dropzone"
             />
 
+            <div style={{
+              marginTop: 16,
+              padding: '12px 16px',
+              background: '#FFFBEB',
+              color: '#B45309',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              border: '1px solid #FEF3C7'
+            }}>
+              <span>⚠️</span>
+              <span><strong>Note:</strong> Please ensure all files within the ZIP archive are of the same page type for accurate processing.</span>
+            </div>
+
             {fileCount && (
               <div style={{
                 marginTop: 16, padding: '12px 16px',

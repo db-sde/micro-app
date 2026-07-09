@@ -572,15 +572,13 @@ export default function ValidationScreen() {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch(`${API_BASE}/confirm/${uploadId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ corrections: [] }),
-        });
+
+        const res = await fetch(`${API_BASE}/upload/${uploadId}`);
         if (!res.ok) throw new Error('Failed to load validation data');
         const json = await res.json();
         setData(json);
       } catch (err) {
+
         setError(err.message);
       } finally {
         setLoading(false);
