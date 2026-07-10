@@ -461,9 +461,178 @@ def enrich_payload(
     _fill_specializations_from_fees(payload, enrichment_log)
     _derive_stats(payload, enrichment_log)
     _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
+    _enrich_num_programs(payload, section_map, enrichment_log)
+    _enrich_admission_fee_note(payload, section_map, enrichment_log)
 
     return payload, enrichment_log
 
+
+def _enrich_num_programs(
+    payload: dict[str, Any],
+    section_map: dict[str, dict[str, Any]],
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Derive num_programs from programs_table row count or by scanning section text.
+
+    Fallback chain:
+    1. Count rows in programs_table (most reliable).
+    2. Scan all section text for "Number of Programs: N" style patterns.
+    3. Scan for any labelled count like "X programs offered" / "X courses".
+
+    No API calls — deterministic regex only.
+    """
+    if payload.get("num_programs"):
+        return
+
+    # Source 1: count programs_table rows
+    pt = payload.get("programs_table")
+    if isinstance(pt, list) and len(pt) > 0:
+        payload["num_programs"] = str(len(pt)) + "+"
+        enrichment_log.append({
+            "field_key": "num_programs",
+            "status": "enriched",
+            "source": "derive:programs_table_count",
+        })
+        logger.info("ENRICHED: num_programs = %r (source=programs_table_count)", payload["num_programs"])
+        return
+
+    # Source 2: scan section text for explicit "Number of Programs: N" patterns
+    _NUM_PROG_PATTERNS = [
+        # "Number of Programs: 3" / "No. of Programs – 5" etc.
+        re.compile(
+            r"(?:number\s*of\s*|no\.\s*of\s*|total\s*)?"
+            r"(?:programs?|courses?)"
+            r"(?:\s*(?:offered|available|count))?"
+            r"\s*[:\-–]\s*(\d+\s*\+?)",
+            re.IGNORECASE,
+        ),
+        # "3 programs" / "5+ courses offered"
+        re.compile(r"(\d+\s*\+?)\s+(?:programs?|courses?)\b", re.IGNORECASE),
+    ]
+
+    for heading, section in section_map.items():
+        if heading.startswith("__"):
+            continue
+        flat = _flatten_section_content(section.get("content", ""))
+        # Also prepend the original heading so inline KV like "Number of Programs: 3" is caught
+        orig_heading = section.get("original_heading", heading)
+        combined = f"{orig_heading}\n{flat}"
+        for pat in _NUM_PROG_PATTERNS:
+            m = pat.search(combined)
+            if m:
+                raw_val = m.group(1).strip()
+                # Sanity: number must be between 1 and 999
+                num_part = re.search(r"\d+", raw_val)
+                if num_part and 1 <= int(num_part.group(0)) <= 999:
+                    payload["num_programs"] = raw_val
+                    enrichment_log.append({
+                        "field_key": "num_programs",
+                        "status": "enriched",
+                        "source": f"derive:section_scan:{heading}",
+                    })
+                    logger.info(
+                        "ENRICHED: num_programs = %r (source=section_scan:%s)",
+                        raw_val, heading,
+                    )
+                    return
+
+
+def _enrich_admission_fee_note(
+    payload: dict[str, Any],
+    section_map: dict[str, dict[str, Any]],
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Derive admission_fee_note by scanning extracted payload text and all document
+    sections for a sentence/step that explicitly mentions paying a fee.
+
+    Pattern priority (most → least strict):
+    1. Step N. ... pay ... fee ...           (numbered step with pay+fee)
+    2. ... pay ... (application|registration|admission|program) fee ...
+    3. ... (application|registration|admission|program) fee ... pay ...
+    4. Any sentence containing 'fee' near a currency symbol or amount
+
+    Scans the already-extracted admission_steps HTML first (most reliable),
+    then all document sections in order: admission/apply/fee headings first,
+    then remaining sections.
+    """
+    if payload.get("admission_fee_note"):
+        return
+
+    _HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+    # Patterns in priority order — NO mandatory digit requirement
+    _FEE_NOTE_PATTERNS = [
+        # Step N. ... pay ... fee (or fee ... pay)
+        re.compile(
+            r"(Step\s*\d+[^.!?\n]*(?:pay|fee)[^.!?\n]*[.!?])",
+            re.IGNORECASE,
+        ),
+        # pay + any fee type
+        re.compile(
+            r"([^.!?\n]*pay[^.!?\n]*(?:application|registration|admission|program|tuition|course)\s+fee[^.!?\n]*[.!?])",
+            re.IGNORECASE,
+        ),
+        # any fee type + pay
+        re.compile(
+            r"([^.!?\n]*(?:application|registration|admission|program|tuition|course)\s+fee[^.!?\n]*pay[^.!?\n]*[.!?])",
+            re.IGNORECASE,
+        ),
+        # fee + amount with currency symbol
+        re.compile(
+            r"([^.!?\n]*(?:application|registration|admission)\s+fee[^.!?\n]*(?:₹|Rs\.?|INR)[^.!?\n]*[.!?])",
+            re.IGNORECASE,
+        ),
+        # pay + fee (generic, no type qualifier)
+        re.compile(
+            r"([^.!?\n]*pay[^.!?\n]*\bfee\b[^.!?\n]*[.!?])",
+            re.IGNORECASE,
+        ),
+    ]
+
+    def _search_text(text: str, source_label: str) -> bool:
+        """Run all patterns against text. Returns True and sets payload if found."""
+        # Strip HTML tags first
+        clean = _HTML_TAG_RE.sub(" ", text)
+        # Normalise whitespace
+        clean = re.sub(r"[ \t]+", " ", clean).strip()
+        for pat in _FEE_NOTE_PATTERNS:
+            m = pat.search(clean)
+            if m:
+                raw_val = m.group(1).strip()
+                payload["admission_fee_note"] = raw_val
+                enrichment_log.append({
+                    "field_key": "admission_fee_note",
+                    "status": "enriched",
+                    "source": source_label,
+                })
+                logger.info(
+                    "ENRICHED: admission_fee_note = %r (source=%s)",
+                    raw_val, source_label,
+                )
+                return True
+        return False
+
+    # ── Priority 1: Already-extracted admission_steps (richest source) ──
+    steps_html = payload.get("admission_steps", "")
+    if steps_html and _search_text(str(steps_html), "derive:admission_steps_payload"):
+        return
+
+    # ── Priority 2: Document sections — admission/apply/fee headings first ──
+    priority_sections = {}
+    other_sections = {}
+    for heading, section in section_map.items():
+        if heading.startswith("__"):
+            continue
+        h_lower = heading.lower()
+        if any(kw in h_lower for kw in ("admission", "apply", "fee", "enroll", "register")):
+            priority_sections[heading] = section
+        else:
+            other_sections[heading] = section
+
+    for heading, section in {**priority_sections, **other_sections}.items():
+        flat = _flatten_section_content(section.get("content", ""))
+        if flat and _search_text(flat, f"derive:section_scan:{heading}"):
+            return
 
 def _enrich_course_stats(
     payload: dict[str, Any],

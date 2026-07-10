@@ -654,7 +654,12 @@ async def bulk_upload(
 
 @app.get("/bulk/{job_id}/progress")
 async def bulk_progress(job_id: int, db: Session = Depends(get_db)):
-    """Check the progress of a bulk processing job."""
+    """Check the progress of a bulk processing job.
+
+    Each per-file result always returns the latest ``quality_score`` and
+    ``acf_extracted`` / ``acf_total`` from the Upload table so that edits
+    made via the JSON editor are reflected when the caller re-fetches.
+    """
     job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Bulk job not found.")
@@ -665,6 +670,29 @@ async def bulk_progress(job_id: int, db: Session = Depends(get_db)):
             per_file_results = json.loads(job.results)
         except json.JSONDecodeError:
             per_file_results = []
+
+    # Refresh quality_score + acf counts from the live Upload record so that
+    # any JSON edits made via the validation screen are reflected here.
+    for result in per_file_results:
+        uid = result.get("upload_id")
+        if not uid:
+            continue
+        try:
+            upload = db.query(Upload).filter(Upload.id == uid).first()
+            if upload:
+                result["quality_score"] = upload.score or 0.0
+                # Re-compute acf counts from latest payload validation
+                if upload.payload:
+                    try:
+                        payload_data = json.loads(upload.payload)
+                        validation = validate_payload(payload_data, upload.page_type or "university")
+                        v_summary = validation["summary"]
+                        result["acf_extracted"] = v_summary.get("mapped", 0) + v_summary.get("thin", 0)
+                        result["acf_total"] = v_summary.get("total_required", 0)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     return {
         "job_id": job.id,

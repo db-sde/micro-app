@@ -16,7 +16,12 @@ export default function BulkScreen() {
   const [progress, setProgress] = useState(null);
   const [fileCount, setFileCount] = useState(null);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef(null);
+  const jobIdRef = useRef(null);
+
+  // Keep jobIdRef in sync so visibilitychange handler can access it
+  useEffect(() => { jobIdRef.current = jobId; }, [jobId]);
 
   const handleFileDrop = (f) => {
     if (!f) {
@@ -30,9 +35,22 @@ export default function BulkScreen() {
       return;
     }
     setFile(f);
-    // Estimate file count (we can't peek into zip client-side, show after upload)
     setFileCount(null);
   };
+
+  /** Fetch latest progress from backend and update state. */
+  const fetchProgress = useCallback(async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/bulk/${id}/progress`);
+      if (!res.ok) throw new Error('Progress fetch failed');
+      const data = await res.json();
+      setProgress(data);
+      setFileCount(data.total_files || null);
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }, []);
 
   const handleStart = async () => {
     if (!file) return;
@@ -73,28 +91,48 @@ export default function BulkScreen() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/bulk/${id}/progress`);
-        if (!res.ok) throw new Error('Progress fetch failed');
-        const data = await res.json();
-        setProgress(data);
-        setFileCount(data.total || null);
+      const data = await fetchProgress(id);
+      if (!data) return;
 
-        if (data.status === 'completed' || data.status === 'failed') {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-          setProcessing(false);
-          if (data.status === 'completed') {
-            showToast('Bulk processing completed!', 'success');
-          } else {
-            showToast('Bulk processing encountered errors', 'warning');
-          }
+      const done = data.status === 'completed' || data.status === 'failed' ||
+                   data.status === 'completed_with_errors';
+      if (done) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        setProcessing(false);
+        if (data.status === 'completed') {
+          showToast('Bulk processing completed!', 'success');
+        } else if (data.status === 'completed_with_errors') {
+          showToast('Bulk processing completed with some errors', 'warning');
+        } else {
+          showToast('Bulk processing encountered errors', 'warning');
         }
-      } catch (err) {
-        // Silently handle poll errors
       }
     }, 2000);
-  }, []);
+  }, [fetchProgress]);
+
+  /** Manual refresh — re-fetches latest scores from server. */
+  const handleRefresh = useCallback(async () => {
+    if (!jobIdRef.current) return;
+    setRefreshing(true);
+    await fetchProgress(jobIdRef.current);
+    setRefreshing(false);
+    showToast('Scores refreshed!', 'success');
+  }, [fetchProgress]);
+
+  // Auto-refresh when user returns to this tab after viewing/fixing JSON in another tab
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && jobIdRef.current) {
+        const isCompleted = !pollRef.current; // polling stopped → job done
+        if (isCompleted) {
+          fetchProgress(jobIdRef.current);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [fetchProgress]);
 
   useEffect(() => {
     return () => {
@@ -106,6 +144,10 @@ export default function BulkScreen() {
   const total = progress?.total_files || fileCount || 0;
   const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
   const files = progress?.results || [];
+
+  const isJobDone = progress?.status === 'completed' ||
+                    progress?.status === 'failed' ||
+                    progress?.status === 'completed_with_errors';
 
   return (
     <div id="bulk-screen">
@@ -227,9 +269,40 @@ export default function BulkScreen() {
                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
                   Processing {total} files
                 </span>
-                <span style={{ fontSize: '0.875rem', fontWeight: 700, fontFamily: 'var(--font-code)', color: 'var(--color-orange)' }}>
-                  {pct}%
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {/* Refresh button — only when job is done */}
+                  {isJobDone && (
+                    <button
+                      id="btn-refresh-scores"
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '4px 10px',
+                        fontSize: '0.75rem', fontWeight: 600,
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--color-surface)',
+                        color: 'var(--color-text-secondary)',
+                        cursor: refreshing ? 'not-allowed' : 'pointer',
+                        opacity: refreshing ? 0.6 : 1,
+                        transition: 'all 0.15s',
+                      }}
+                      title="Re-fetch latest scores from server (useful after fixing JSON)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                        style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}>
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      {refreshing ? 'Refreshing…' : 'Refresh Scores'}
+                    </button>
+                  )}
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, fontFamily: 'var(--font-code)', color: 'var(--color-orange)' }}>
+                    {pct}%
+                  </span>
+                </div>
               </div>
               <div className="progress-bar">
                 <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
@@ -239,7 +312,10 @@ export default function BulkScreen() {
                   {processed} of {total} processed
                 </span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                  {progress?.status === 'completed' ? '✓ Complete' : progress?.status === 'failed' ? '✕ Failed' : '⏳ Processing…'}
+                  {progress?.status === 'completed' ? '✓ Complete'
+                    : progress?.status === 'completed_with_errors' ? '⚠ Completed with errors'
+                    : progress?.status === 'failed' ? '✕ Failed'
+                    : '⏳ Processing…'}
                 </span>
               </div>
             </div>
@@ -249,6 +325,11 @@ export default function BulkScreen() {
           <div className="card">
             <div className="card-header">
               <h3 className="card-header-title">File Results</h3>
+              {isJobDone && (
+                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                  Click "Refresh Scores" after fixing JSON in another tab
+                </span>
+              )}
             </div>
             <div className="data-table-wrapper">
               <table className="data-table" id="bulk-results-table">
@@ -257,13 +338,14 @@ export default function BulkScreen() {
                     <th>Filename</th>
                     <th>Status</th>
                     <th>Score</th>
+                    <th>ACFs Extracted</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {files.length === 0 ? (
                     <tr>
-                      <td colSpan={4}>
+                      <td colSpan={5}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32, color: 'var(--color-text-muted)' }}>
                           <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
                           Waiting for results…
@@ -290,7 +372,30 @@ export default function BulkScreen() {
                           </span>
                         </td>
                         <td>
-                          {f.upload_id && f.status !== 'processing' && (
+                          {f.acf_extracted != null ? (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              fontFamily: 'var(--font-code)', fontWeight: 600,
+                              fontSize: '0.8125rem',
+                            }}>
+                              <span style={{
+                                color: f.acf_extracted > 0 ? 'var(--color-mapped-text)' : 'var(--color-missing-text)',
+                                fontWeight: 700,
+                              }}>
+                                {f.acf_extracted}
+                              </span>
+                              {f.acf_total != null && (
+                                <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                                  / {f.acf_total}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {f.upload_id && f.status !== 'processing' ? (
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => {
@@ -300,7 +405,15 @@ export default function BulkScreen() {
                             >
                               View →
                             </button>
-                          )}
+                          ) : f.status === 'failed' && f.error ? (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ color: 'var(--color-missing-text)' }}
+                              onClick={() => alert(`Error processing ${f.filename}:\n\n${f.error}`)}
+                            >
+                              View Error
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     ))
@@ -311,8 +424,22 @@ export default function BulkScreen() {
           </div>
 
           {/* Reset Button */}
-          {(progress?.status === 'completed' || progress?.status === 'failed') && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
+          {isJobDone && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 24 }}>
+              <button
+                className="btn btn-ghost"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                id="btn-bulk-refresh-bottom"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}>
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                Refresh Scores
+              </button>
               <button
                 className="btn btn-secondary"
                 onClick={() => {

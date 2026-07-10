@@ -127,9 +127,13 @@ FIELD_EXTRACTION_HINTS: dict[str, str] = {
         "If no label is present for a review, use 'Student' as the default — never null."
     ),
     "admission_fee_note": (
-        "IMPORTANT: Find the specific line, step, or sentence that mentions paying the application fee, "
-        "registration fee, or program fee. Extract only that sentence or step as the admission fee note. "
-        "Even if it is just a numbered step (e.g. 'Step 5. Pay the required fee...'), extract it."
+        "IMPORTANT: Find ONLY the specific sentence or numbered step that says the applicant "
+        "must pay a fee (application fee, registration fee, program fee, tuition fee, etc.). "
+        "The expected format is a single plain-text sentence like: "
+        "'Step 5. Pay the application fee online.' or "
+        "'Pay the registration fee of Rs 500 to confirm your admission.' "
+        "Do NOT return the full admission process — ONLY the fee payment step/sentence. "
+        "If the section does not mention any fee payment step, return {\"value\": null}."
     ),
     "faculty_intro": (
         "IMPORTANT: Extract the introductory text/paragraph that appears before the faculty table. "

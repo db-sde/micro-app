@@ -69,9 +69,11 @@ def run_bulk_job_in_background(
 
                 result["status"] = "success"
                 result["upload_id"] = pipeline_result["upload_id"]
-                result["quality_score"] = pipeline_result["validation"]["summary"][
-                    "quality_score"
-                ]
+                v_summary = pipeline_result["validation"]["summary"]
+                result["quality_score"] = v_summary["quality_score"]
+                # Count successfully extracted ACF fields (mapped + thin)
+                result["acf_extracted"] = v_summary.get("mapped", 0) + v_summary.get("thin", 0)
+                result["acf_total"] = v_summary.get("total_required", 0)
 
                 # Update progress
                 job = db.query(BulkJob).filter(BulkJob.id == job_id).first()

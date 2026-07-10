@@ -173,17 +173,32 @@ def run_extraction_pipeline(
     kv_records: list[dict[str, Any]] = []
     kv_headings_to_remove: list[str] = []
 
+    import re as _re
+    _HTML_PARA_SPLIT_RE = _re.compile(r'</?(?:p|br|li|div)[^>]*>', _re.IGNORECASE)
+    _HTML_TAG_STRIP_RE  = _re.compile(r'<[^>]+')
+
+    def _normalize_for_kv(raw: str) -> str:
+        """Convert HTML-formatted content to newline-separated plain text."""
+        if not raw:
+            return raw
+        text = _HTML_PARA_SPLIT_RE.sub('\n', raw)
+        text = _HTML_TAG_STRIP_RE.sub('', text)
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        return '\n'.join(lines)
+
     for heading, section_data in list(section_map.items()):
         if heading.startswith("__"):
             continue
         original_heading = section_data.get("original_heading", heading)
         raw_content = flatten_section_to_text(section_data.get("content", ""))
-        
+        # Normalize HTML block tags to newlines so each KV pair is on its own line
+        normalized_content = _normalize_for_kv(raw_content)
+
         # Prepend original heading to content so KV parser can catch keys
         # that were accidentally absorbed into the docx heading.
-        combined_text = f"{original_heading}\n{raw_content}"
+        combined_text = f"{original_heading}\n{normalized_content}"
 
-        if not raw_content or not looks_like_kv_section(combined_text):
+        if not normalized_content or not looks_like_kv_section(combined_text):
             continue
 
         kv_fields = parse_kv_section(combined_text)
