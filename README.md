@@ -96,6 +96,7 @@ The backend exposes the following endpoints (relative to `http://localhost:8000`
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
 | `/upload` | `POST` | Upload a single `.docx` file and run the full pipeline |
+| `/upload-blog` | `POST` | Upload a `.docx` file for a blog/category page and get a 4-5 point summary |
 | `/confirm/{upload_id}` | `POST` | Update field mapping overrides and trigger validation recalculation |
 | `/download/{upload_id}` | `GET` | Fetch the final WordPress ACF JSON payload |
 | `/bulk` | `POST` | Upload a `.zip` containing multiple `.docx` files to process in the background |
