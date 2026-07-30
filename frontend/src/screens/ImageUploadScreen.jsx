@@ -30,6 +30,11 @@ export default function ImageUploadScreen() {
   const [uploading, setUploading] = useState({});
   const fileRefs = useRef({});
 
+  // True while any slot's /upload-image request is still in flight. Used to
+  // block navigating away early — otherwise Validation can load and show a
+  // field as "missing" moments before that same upload actually commits.
+  const anyUploading = Object.values(uploading).some(Boolean);
+
   const handleImageSelect = useCallback(async (slotKey, file) => {
     if (!file) return;
 
@@ -184,19 +189,27 @@ export default function ImageUploadScreen() {
           </div>
         </div>
 
-        <div className="card-footer" style={{ justifyContent: 'space-between' }}>
+        <div className="card-footer" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           {/* No uploadData passed onward — ValidationScreen re-fetches fresh
               so any images uploaded here (now part of the ACF payload) show up. */}
-          <Link
-            to={`/upload/${uploadId}/validation`}
-            className="btn btn-ghost"
-            id="btn-skip-images"
-          >
-            Skip this step →
-          </Link>
+          {anyUploading ? (
+            <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+              Waiting for upload{Object.values(uploading).filter(Boolean).length > 1 ? 's' : ''} to finish…
+            </span>
+          ) : (
+            <Link
+              to={`/upload/${uploadId}/validation`}
+              className="btn btn-ghost"
+              id="btn-skip-images"
+            >
+              Skip this step →
+            </Link>
+          )}
           <button
             className="btn btn-primary"
             onClick={() => navigate(`/upload/${uploadId}/validation`)}
+            disabled={anyUploading}
+            title={anyUploading ? 'Wait for the upload to finish first' : undefined}
             id="btn-continue-validation"
           >
             Continue to Validation
