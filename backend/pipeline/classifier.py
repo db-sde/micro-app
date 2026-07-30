@@ -159,9 +159,3 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
     }
 
 
-from acf.fields import get_all_valid_field_keys
-
-
-# ── Module-level cache — built once, reused for all files ──────────────────
-# Import this directly in tasks.py / bulk workers so it is not rebuilt per file.
-VALID_ACF_FIELDS: set[str] = get_all_valid_field_keys()

@@ -237,10 +237,13 @@ def _enrich_course_name(
 ) -> None:
     """Fill name fields from filename or first heading.
 
-    Page-type guard:
-    - university pages → only fill university_name
-    - course pages     → fill course_name; NOT spec_name
-    - spec pages       → fill spec_name and course_name
+    Page-type guard — each field key here must actually exist in that page
+    type's ACF schema (get_valid_field_keys), otherwise it just pollutes the
+    payload with a value that's invisible to validation and gets rejected
+    by WordPress's ACF REST schema on publish:
+    - university pages → university_name
+    - course pages     → program_name
+    - spec pages       → spec_name
 
     No API calls — pure regex + heuristic.
     """
@@ -250,9 +253,9 @@ def _enrich_course_name(
     if page_type == "university":
         candidate_fields = ["university_name"]
     elif page_type == "course":
-        candidate_fields = ["course_name"]
+        candidate_fields = ["program_name"]
     else:  # specialization
-        candidate_fields = ["spec_name", "course_name"]
+        candidate_fields = ["spec_name"]
 
     for field_key in candidate_fields:
         if payload.get(field_key) is not None:
@@ -658,16 +661,18 @@ def _enrich_course_stats(
 ) -> None:
     """Derive missing course/specialization stat fields from filename + payload.
 
-    Fills: program_name, university_name, mode, naac_grade, ugc_status,
-           num_specializations, starting_fee, eligibility_summary.
+    Fills, for both course and specialization: university_name, mode,
+    naac_grade, ugc_status, eligibility_summary.
+    Course-only (not part of the specialization ACF schema): program_name,
+    num_specializations, starting_fee.
 
     No API calls — deterministic regex + heuristics only.
     """
     if page_type not in ("course", "specialization"):
         return
 
-    # ── program_name: from filename ──────────────────────────────
-    if not payload.get("program_name"):
+    # ── program_name: from filename (course only — not a specialization field) ──
+    if page_type == "course" and not payload.get("program_name"):
         name = clean_filename(filename)
         # Look for known program keywords in the name
         m = re.search(
@@ -696,12 +701,10 @@ def _enrich_course_stats(
             enrichment_log.append({"field_key": "university_name", "status": "enriched", "source": "filename"})
             logger.info("ENRICHED: university_name = %r (source=filename)", uni)
 
-    # ── linked_university (Course only) ──────────────────────────
-    if page_type == "course" and not payload.get("linked_university"):
-        if payload.get("university_name"):
-            payload["linked_university"] = payload["university_name"]
-            enrichment_log.append({"field_key": "linked_university", "status": "enriched", "source": "university_name"})
-            logger.info("ENRICHED: linked_university = %r (source=university_name)", payload["linked_university"])
+    # linked_university / linked_course are RELATION fields — they hold a
+    # WordPress post ID, never a plain name string, so there is nothing
+    # meaningful to auto-fill here. They're in SKIP_EXTRACTION_FIELDS and
+    # get set manually in WordPress instead.
 
     # ── mode: from hero_description or highlights ─────────────────
     if not payload.get("mode"):
@@ -757,8 +760,9 @@ def _enrich_course_stats(
                 logger.info("ENRICHED: ugc_status = %r (source=%s)", payload["ugc_status"], src_key)
                 break
 
-    # ── num_specializations: count from specializations_intro or fee_plans ──
-    if not payload.get("num_specializations"):
+    # ── num_specializations: count from specializations_intro or fee_plans
+    #    (course only — not a specialization-page field) ──────────────────
+    if page_type == "course" and not payload.get("num_specializations"):
         # Try specializations_intro text for a number
         intro = payload.get("specializations_intro", "")
         if intro:
@@ -775,8 +779,8 @@ def _enrich_course_stats(
                 enrichment_log.append({"field_key": "num_specializations", "status": "enriched", "source": "derive:fee_plans_count"})
                 logger.info("ENRICHED: num_specializations = %r", payload["num_specializations"])
 
-    # ── starting_fee: lowest fee from fee_plans ───────────────────
-    if not payload.get("starting_fee"):
+    # ── starting_fee: lowest fee from fee_plans (course only) ─────
+    if page_type == "course" and not payload.get("starting_fee"):
         # Try total_fee first
         if payload.get("total_fee"):
             payload["starting_fee"] = payload["total_fee"]

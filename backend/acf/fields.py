@@ -210,6 +210,18 @@ def get_all_valid_field_keys() -> set:
             keys.add(f['key'])
     return keys
 
+def get_valid_field_keys(page_type: str) -> set:
+    """Field keys registered for a SPECIFIC page type only.
+
+    Use this (not get_all_valid_field_keys) anywhere a tag/value needs to be
+    validated against what's actually publishable for the current document —
+    e.g. a `[fee_plans]` tag is a real field key, but only for "course", not
+    "university" or "specialization"; accepting it globally lets content
+    from the wrong page-type template silently pollute the payload with
+    fields WordPress's ACF schema will reject on publish.
+    """
+    return {f['key'] for f in ACF_FIELDS.get(page_type, [])}
+
 def get_field_type(field_key: str, page_type: str) -> str:
     for f in ACF_FIELDS.get(page_type, []):
         if f['key'] == field_key:

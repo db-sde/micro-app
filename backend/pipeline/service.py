@@ -33,9 +33,9 @@ from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.enricher import enrich_payload
 from pipeline.validator import validate_payload
 from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text
-from pipeline.classifier import classify_heading, VALID_ACF_FIELDS
+from pipeline.classifier import classify_heading
 from pipeline.formatter import build_json_output
-from acf.fields import get_field_type
+from acf.fields import get_field_type, get_valid_field_keys
 
 logger = logging.getLogger("degreebaba.pipeline")
 
@@ -228,6 +228,13 @@ def run_extraction_pipeline(
         )
 
     # ── Step 2.75: Classify Headings (Three-Tier Mapping) ──
+    # Scoped to THIS document's page type, not every field key across all
+    # page types — otherwise a `[fee_plans]` or `[emi_heading]` tag left
+    # over from a different page-type's template gets accepted as "valid"
+    # even though it isn't part of this page type's schema, silently
+    # polluting the payload with fields WordPress's ACF REST schema will
+    # reject wholesale (as "Invalid parameter(s): acf") when publishing.
+    valid_fields_for_type = get_valid_field_keys(detected_type)
     direct_assignments: list[dict[str, Any]] = []
     sections_for_embedding: dict[str, dict[str, Any]] = {}
 
@@ -237,7 +244,7 @@ def run_extraction_pipeline(
             continue
 
         original_heading = section_data.get("original_heading", heading)
-        result = classify_heading(original_heading, VALID_ACF_FIELDS)
+        result = classify_heading(original_heading, valid_fields_for_type)
         section_data["classification"] = result
         section_data["display_heading"] = result["display"]
 

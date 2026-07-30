@@ -37,6 +37,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from acf.fields import get_valid_field_keys
+
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
 
@@ -74,9 +76,35 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
     if resp.status_code >= 400:
         try:
             body = resp.json()
-            message = body.get("message", resp.text)
         except Exception:
+            body = None
+
+        if body is None:
             message = resp.text
+        else:
+            # WP's top-level "message" for rest_invalid_param is almost
+            # always a generic "Invalid parameter(s): acf" with no field
+            # name — the actual reason is nested one level deeper, in
+            # data.params (field -> short reason) and/or data.details
+            # (field -> {code, message}). Surface both so the real cause
+            # (which ACF field, and why) is visible instead of guessing.
+            message = body.get("message", resp.text)
+            data = body.get("data") or {}
+            if isinstance(data, dict):
+                extras: list[str] = []
+                params = data.get("params")
+                if isinstance(params, dict):
+                    extras.extend(f"{k}: {v}" for k, v in params.items())
+                details = data.get("details")
+                if isinstance(details, dict):
+                    for k, v in details.items():
+                        if isinstance(v, dict):
+                            detail_msg = v.get("message") or v.get("code")
+                            if detail_msg:
+                                extras.append(f"{k}: {detail_msg}")
+                if extras:
+                    message = f"{message} — {'; '.join(extras)}"
+
         raise RuntimeError(
             f"WordPress API error ({resp.status_code}): {message}"
         )
@@ -131,7 +159,31 @@ def publish_payload(
         raise ValueError(f"Invalid status: {status!r}. Must be draft, publish, or pending.")
 
     post_type = get_post_type(page_type)
-    acf_fields = {k: v for k, v in payload.items() if k != "_meta"}
+
+    # Only send keys actually registered in this page type's ACF schema.
+    # A stray key here — e.g. from a [tag] left over from a different
+    # page-type's docx template, or an older upload processed before an
+    # extraction bug was fixed — makes WordPress reject the ENTIRE acf
+    # object with a generic "Invalid parameter(s): acf" 400, since ACF's
+    # REST schema validation typically forbids additional properties. Drop
+    # anything unrecognized here rather than let it break the whole publish.
+    valid_keys = get_valid_field_keys(page_type)
+    acf_fields = {}
+    dropped: list[str] = []
+    for k, v in payload.items():
+        if k == "_meta":
+            continue
+        if k in valid_keys:
+            acf_fields[k] = v
+        else:
+            dropped.append(k)
+    if dropped:
+        logger.warning(
+            "PUBLISH_DROPPED_UNKNOWN_FIELDS: page_type=%s keys=%s "
+            "(not part of this page type's ACF schema)",
+            page_type, dropped,
+        )
+
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
 
     body = {
