@@ -103,7 +103,7 @@ The backend exposes the following endpoints (relative to `http://localhost:8000`
 | `/bulk/{job_id}/progress` | `GET` | Query progress/results status of a bulk upload job |
 | `/history` | `GET` | List metadata of all past uploads (paginated) |
 | `/history/{upload_id}` | `DELETE` | Delete an upload record and its associated field mappings |
-| `/upload-image` | `POST` | Upload an image for a slot (`hero_image`/`logo`/`certificate_image`); pushes it to Cloudinary (local-disk fallback) and stores the resulting URL directly on that ACF field |
+| `/upload-image` | `POST` | Upload an image for a slot (`hero_image`/`certificate_image`); pushes it to Cloudinary (local-disk fallback) and stores the resulting URL directly on that ACF field |
 | `/publish/{upload_id}` | `POST` | Publish an upload's ACF JSON payload to WordPress as a post of the matching CPT (`draft` by default); re-publishing updates the same post |
 | `/parse` | `POST` | Debug endpoint to return raw document parse output only |
 | `/health` | `GET` | Service health status ping |

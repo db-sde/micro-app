@@ -6,20 +6,16 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
+// Same two slots for every page type — hero image and certificate image.
+const IMAGE_SLOTS_COMMON = [
+  { key: 'hero_image', label: 'Hero Image', hint: 'Recommended: 1200×630px' },
+  { key: 'certificate_image', label: 'Certificate Image', hint: 'Certificate scan or sample' },
+];
+
 const IMAGE_SLOTS = {
-  university: [
-    { key: 'hero_image', label: 'Hero Image', hint: 'Recommended: 1200×630px' },
-    { key: 'logo', label: 'Logo', hint: 'Square, min 200×200px' },
-    { key: 'certificate_image', label: 'Certificate Image', hint: 'Certificate scan or sample' },
-  ],
-  course: [
-    { key: 'hero_image', label: 'Hero Image', hint: 'Recommended: 1200×630px' },
-    { key: 'certificate_image', label: 'Certificate Image', hint: 'Certificate scan or sample' },
-  ],
-  specialization: [
-    { key: 'hero_image', label: 'Hero Image', hint: 'Recommended: 1200×630px' },
-    { key: 'certificate_image', label: 'Certificate Image', hint: 'Certificate scan or sample' },
-  ],
+  university: IMAGE_SLOTS_COMMON,
+  course: IMAGE_SLOTS_COMMON,
+  specialization: IMAGE_SLOTS_COMMON,
 };
 
 export default function ImageUploadScreen() {

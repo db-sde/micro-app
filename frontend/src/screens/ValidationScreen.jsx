@@ -67,9 +67,9 @@ const FIELD_TYPE_GUIDE = [
     example: '[{"other_spec_name": "Marketing MBA", "other_spec_fee": "₹1,10,000"}]',
   },
   {
-    type: 'hero_image / logo / certificate_image',
+    type: 'hero_image / certificate_image',
     format: 'Media URL (string) — auto-filled by the Upload Images step',
-    example: '"https://site.com/wp-content/uploads/2026/07/hero.jpg"',
+    example: '"https://res.cloudinary.com/xxxxx/image/upload/v.../hero.jpg"',
   },
   {
     type: 'linked_university / linked_course',

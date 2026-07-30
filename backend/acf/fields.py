@@ -21,7 +21,6 @@ ACF_FIELDS = {
         {'key': 'num_programs',       'type': STAT,     'embed': 'number of programs total programs courses offered count'},
         # Images — populated only via /upload-image, never via docx text extraction
         {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
-        {'key': 'logo',               'type': IMAGE,    'embed': ''},
         {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading section title'},
