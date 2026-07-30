@@ -877,6 +877,24 @@ async def upload_image(
         )
 
     # ── Persist the URL directly into the ACF payload ──
+    # Re-fetch (and lock, on Postgres) the row NOW rather than reusing the
+    # `upload` object loaded at the top of this function. Several image
+    # slots are typically uploaded back-to-back for the same upload_id;
+    # the WordPress call above can take a while, so a stale in-memory
+    # payload here would silently clobber whichever other slot's write
+    # landed in between — each request "succeeds" individually but only
+    # the last commit's slot survives. with_for_update() serializes
+    # concurrent requests for the same upload_id on Postgres; it's a
+    # harmless no-op on the SQLite dev fallback.
+    upload = (
+        db.query(Upload)
+        .filter(Upload.id == upload_id)
+        .with_for_update()
+        .first()
+    )
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
     existing_payload: dict[str, Any] = {}
     if upload.payload:
         try:
