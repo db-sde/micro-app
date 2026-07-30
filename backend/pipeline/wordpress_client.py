@@ -18,9 +18,15 @@ Assumes the target site exposes ACF fields over REST (ACF PRO 5.11+ with
 "Show in REST API" enabled per field group, or the ACF to REST API plugin) —
 publish_payload() sends field values under the "acf" key on create/update.
 
-Image fields are populated separately, via pipeline.cloudinary_client —
-their values are already plain URL strings by the time they reach here,
-same as any other field.
+Image fields (hero_image, certificate_image) are populated separately, via
+pipeline.cloudinary_client, as plain URL strings — but a native ACF
+"Image" field type requires an actual WordPress media attachment ID, not
+an external URL, or WordPress rejects the whole acf object with
+"acf[<field>] requires a valid attachment ID". publish_payload() handles
+this by downloading the image from its Cloudinary URL and side-loading it
+into the WordPress media library at publish time, then sending the
+resulting attachment ID instead of the URL. Images are optional — a field
+with no uploaded image (null) is left as null, no conversion attempted.
 
 Public API
 ----------
@@ -31,13 +37,14 @@ publish_payload(payload, page_type, status, post_id=None)  -> dict
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
 
-from acf.fields import get_valid_field_keys
+from acf.fields import get_valid_field_keys, get_field_type, IMAGE
 
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
@@ -114,11 +121,46 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
 
 
 def _build_title(payload: dict[str, Any], page_type: str, fallback: str) -> str:
-    for key in ("university_name", "program_name", "spec_name", "course_name"):
+    for key in ("university_name", "program_name", "spec_name"):
         val = payload.get(key)
         if val and isinstance(val, str):
             return val
     return fallback
+
+
+def _upload_media_from_url(url: str, filename_hint: str) -> int:
+    """Download an image from `url` and side-load it into the WordPress
+    media library, returning the resulting attachment ID.
+
+    A native ACF "Image" field type only accepts a WordPress attachment ID,
+    never an external URL — this is how publish_payload() satisfies that
+    for fields whose canonical copy lives on Cloudinary.
+    """
+    with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as client:
+        img_resp = client.get(url)
+    if img_resp.status_code >= 400:
+        raise RuntimeError(
+            f"Could not download image from {url} (HTTP {img_resp.status_code})"
+        )
+
+    content = img_resp.content
+    content_type = img_resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+    ext = mimetypes.guess_extension(content_type) or ".jpg"
+    filename = f"{filename_hint}{ext}"
+
+    media_url = f"{_site_url()}/wp-json/wp/v2/media"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Type": content_type,
+    }
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        resp = client.post(media_url, content=content, headers=headers, auth=_auth())
+    _raise_for_wp_error(resp)
+
+    data = resp.json()
+    attachment_id = data.get("id")
+    logger.info("WP_MEDIA_SIDELOADED: id=%s from_url=%s", attachment_id, url)
+    return attachment_id
 
 
 def publish_payload(
@@ -183,6 +225,24 @@ def publish_payload(
             "(not part of this page type's ACF schema)",
             page_type, dropped,
         )
+
+    # Convert IMAGE-type fields from a Cloudinary URL to a WordPress
+    # attachment ID — a native ACF "Image" field rejects anything else.
+    # Images are optional: a field with no uploaded image is left as null,
+    # no download/upload attempted for it.
+    for key in list(acf_fields.keys()):
+        if get_field_type(key, page_type) != IMAGE:
+            continue
+        url_value = acf_fields[key]
+        if not url_value:
+            acf_fields[key] = None
+            continue
+        try:
+            acf_fields[key] = _upload_media_from_url(url_value, f"{page_type}_{key}")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to attach '{key}' image to WordPress (source: {url_value}): {exc}"
+            ) from exc
 
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
 
