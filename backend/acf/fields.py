@@ -6,9 +6,6 @@ STAT       = 'stat'
 IMAGE      = 'image'
 RELATION   = 'relation'
 
-# Fields that are purely structural or managed differently and should not be extracted from docx.
-SKIP_EXTRACTION_FIELDS = set()
-
 ACF_FIELDS = {
 
     'university': [
@@ -192,6 +189,19 @@ ACF_FIELDS = {
         {'key': 'seo_title',             'type': TEXT, 'embed': 'seo title meta title page title search engine 50-60 chars'},
         {'key': 'meta_description',      'type': TEXTAREA, 'embed': 'meta description seo search snippet 140-160 chars'},
     ],
+}
+
+# Fields that are purely structural or managed differently and should not be
+# extracted from docx — currently just RELATION fields (linked_university,
+# linked_course), which are WordPress post-ID references set manually in
+# WordPress and can never come from document text. IMAGE fields are
+# deliberately NOT included here: they ARE extractable (via /upload-image),
+# so "missing" is a real, actionable signal until an image is uploaded.
+SKIP_EXTRACTION_FIELDS = {
+    f['key']
+    for fields in ACF_FIELDS.values()
+    for f in fields
+    if f['type'] == RELATION
 }
 
 def get_all_valid_field_keys() -> set:

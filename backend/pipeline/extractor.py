@@ -18,7 +18,7 @@ from typing import Any
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from acf.fields import ACF_FIELDS, get_field_type
+from acf.fields import ACF_FIELDS, get_field_type, IMAGE, RELATION
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -261,6 +261,19 @@ def extract_field(
     page_type: str = "",
 ) -> dict[str, Any]:
     """Extract and format content for a single ACF field."""
+    if field_type in (IMAGE, RELATION):
+        # These are never document text: image fields are only populated by
+        # /upload-image, and relation fields are set manually in WordPress.
+        # A Tier-1 [field_name] tag or a manual mapping correction can still
+        # route a heading to one of these keys — without this guard that
+        # content would otherwise fall through to _extract_wysiwyg() below
+        # and silently overwrite the field with HTML-formatted junk text.
+        return {
+            "value": None,
+            "reason": "non_extractable_type",
+            "flag": f"Field type '{field_type}' is not extractable from document text.",
+        }
+
     text_block = content_to_text(content)
 
     if heading:
@@ -287,7 +300,7 @@ def extract_field(
         return _extract_text(field_key, text_block)
     elif field_type == "textarea":
         return _extract_textarea(field_key, text_block)
-    elif field_type == "wysiwyg":
+    elif field_type == "html":
         return _extract_wysiwyg(field_key, text_block)
     elif field_type == "stat":
         return _extract_stat(field_key, text_block)

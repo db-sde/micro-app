@@ -68,8 +68,6 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"linked[\s_]*course|linked[\s_]*program", "linked_course"),
     # University Full Name
     (r"university\s*full\s*name|full\s*name", "university_full_name"),
-    # CDOE Year
-    (r"cdoe(?:\s*year)?", "cdoe_year"),
     # UGC status — matched BEFORE the generic ugc_approved rule
     # The service layer will remap ugc_approved → ugc_status for course/specialization
     # but if the document key is literally 'ugc_status' we also capture it here.
@@ -93,11 +91,6 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
                                                               "num_programs"),
     # NAAC grade specifically (duplicate guard, keep for ordering safety)
     (r"naac\s*(?:grade|rating|score)|grade",                  "naac_grade"),
-    # Ranking
-    (r"rank(?:ing|ed)?|nirf|rated\s+\d",                      "ranking"),
-    # Campus / location
-    (r"campus(?:es)?|location(?:s)?|headquarter|head\s*office",
-                                                              "campus_location"),
     # Starting fee
     (r"starting\s*fee",                                       "starting_fee"),
     # Fee / cost
@@ -114,10 +107,6 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     r"\b(?:emi|monthly\s*(?:installment|payment)|pay\s*per\s*month)\b",
     "emi_amount",
 ),
-    # Lateral entry / eligibility shortcuts
-    (r"eligib|who\s*can\s*apply|qualif",                      "eligibility"),
-    # Exam / assessment
-    (r"exam(?:ination)?|assessment|evaluation|grading",       "exam_pattern"),
     # Specializations count (stat)
     (r"(?:total\s*|number\s*of\s*)?specialization(?:s)?(?:\s*(?:offered|count|available))?",
                                                               "num_specializations"),
