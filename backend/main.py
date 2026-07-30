@@ -884,11 +884,16 @@ async def upload_image(
     # payload here would silently clobber whichever other slot's write
     # landed in between — each request "succeeds" individually but only
     # the last commit's slot survives. with_for_update() serializes
-    # concurrent requests for the same upload_id on Postgres; it's a
-    # harmless no-op on the SQLite dev fallback.
+    # concurrent requests for the same upload_id on Postgres (no-op on
+    # the SQLite dev fallback); populate_existing() is required on top of
+    # it because `upload` is already in this session's identity map (from
+    # the page_type check above) — without it SQLAlchemy silently returns
+    # the same stale cached object instead of refreshing it from this
+    # locked read, even though a real SQL SELECT was issued.
     upload = (
         db.query(Upload)
         .filter(Upload.id == upload_id)
+        .populate_existing()
         .with_for_update()
         .first()
     )
