@@ -464,6 +464,21 @@ def enrich_payload(
     _enrich_num_programs(payload, section_map, enrichment_log)
     _enrich_admission_fee_note(payload, section_map, enrichment_log)
 
+    # Last-resort default: many documents simply don't mention an
+    # application-fee step at all (it's optional info, not every program
+    # charges one). Rather than leaving the field permanently "missing" in
+    # validation, default it to "N/A" — but only after every real
+    # extraction/enrichment path above has already had its chance, so any
+    # value actually found in the document always wins over this default.
+    if not payload.get("admission_fee_note"):
+        payload["admission_fee_note"] = "N/A"
+        enrichment_log.append({
+            "field_key": "admission_fee_note",
+            "status": "enriched",
+            "source": "default:not_found_in_document",
+        })
+        logger.info("DEFAULTED: admission_fee_note = 'N/A' (not found in document)")
+
     return payload, enrichment_log
 
 
