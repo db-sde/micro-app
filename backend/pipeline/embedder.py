@@ -17,7 +17,7 @@ import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from acf.fields import ACF_FIELDS
+from acf.fields import ACF_FIELDS, NON_EXTRACTABLE_TYPES
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ _ALL_FIELDS: dict[str, dict[str, str]] = {}
 for page_type, fields_list in ACF_FIELDS.items():
     _ALL_FIELDS[page_type] = {
         f["key"]: f["embed"] for f in fields_list
-        if not f["key"].endswith("_heading")
+        if not f["key"].endswith("_heading") and f["type"] not in NON_EXTRACTABLE_TYPES
     }
 
 

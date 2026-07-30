@@ -22,6 +22,10 @@ ACF_FIELDS = {
         {'key': 'mode_of_learning',   'type': TEXT,     'embed': 'mode of learning online offline distance hybrid delivery'},
         {'key': 'starting_fee',       'type': STAT,     'embed': 'starting fee lowest fee minimum fee per semester program'},
         {'key': 'num_programs',       'type': STAT,     'embed': 'number of programs total programs courses offered count'},
+        # Images — populated only via /upload-image, never via docx text extraction
+        {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
+        {'key': 'logo',               'type': IMAGE,    'embed': ''},
+        {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading section title'},
         {'key': 'why_choose_heading',     'type': TEXT, 'embed': 'why choose heading title pros benefits'},
@@ -75,6 +79,9 @@ ACF_FIELDS = {
         {'key': 'ugc_status',         'type': TEXT,     'embed': 'ugc status entitled approved recognition'},
         {'key': 'total_fee',          'type': STAT,     'embed': 'total fee best price complete course fee cost amount'},
         {'key': 'num_specializations','type': STAT,     'embed': 'number of specializations count available tracks options'},
+        # Images — populated only via /upload-image, never via docx text extraction
+        {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
+        {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
         # Headings
         {'key': 'about_heading',           'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',      'type': TEXT, 'embed': 'highlights heading program highlights title'},
@@ -128,6 +135,9 @@ ACF_FIELDS = {
         {'key': 'naac_grade',         'type': STAT,     'embed': 'naac grade accreditation A A+ rating'},
         {'key': 'ugc_status',         'type': TEXT,     'embed': 'ugc status entitled approved recognition'},
         {'key': 'total_fee',          'type': TEXT,     'embed': 'total fee best price complete course fee cost semester breakdown'},
+        # Images — populated only via /upload-image, never via docx text extraction
+        {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
+        {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',     'type': TEXT, 'embed': 'highlights heading title'},
@@ -196,3 +206,11 @@ def get_field_type(field_key: str, page_type: str) -> str:
         if f['key'] == field_key:
             return f['type']
     return 'text'
+
+# Field types that are never populated by docx text extraction/embedding —
+# they're filled by dedicated flows instead (image upload, manual WP relation picking).
+NON_EXTRACTABLE_TYPES = {IMAGE, RELATION}
+
+def get_image_field_keys(page_type: str) -> set:
+    """Return the set of IMAGE-type field keys valid for a given page type."""
+    return {f['key'] for f in ACF_FIELDS.get(page_type, []) if f['type'] == IMAGE}

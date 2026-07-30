@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import {
   TopBar, StepIndicator, StatusBadge, ConfidenceBar,
-  QualityScoreBadge, LoadingSpinner, showToast
+  QualityScoreBadge, LoadingSpinner, showToast, Modal, Toggle
 } from '../components/Components';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
 
@@ -67,8 +67,13 @@ const FIELD_TYPE_GUIDE = [
     example: '[{"other_spec_name": "Marketing MBA", "other_spec_fee": "₹1,10,000"}]',
   },
   {
-    type: 'hero_image / linked_university / linked_course',
-    format: 'WordPress Post ID or media ID (string)',
+    type: 'hero_image / logo / certificate_image',
+    format: 'Media URL (string) — auto-filled by the Upload Images step',
+    example: '"https://site.com/wp-content/uploads/2026/07/hero.jpg"',
+  },
+  {
+    type: 'linked_university / linked_course',
+    format: 'WordPress Post ID (string)',
     example: '"4521"  — set manually in WordPress',
   },
 ];
@@ -94,11 +99,8 @@ function buildFieldRows(uploadData) {
     const value = uploadData.payload?.[fr.field_key];
     let charCount = 0;
     let preview = '—';
-    const isSkipped = ['hero_image'].includes(fr.field_key);
 
-    if (isSkipped) {
-      preview = 'Set manually in WordPress';
-    } else if (typeof value === 'string') {
+    if (typeof value === 'string') {
       charCount = value.length;
       preview = value.length > 100 ? value.slice(0, 100) + '…' : value;
     } else if (Array.isArray(value)) {
@@ -112,10 +114,10 @@ function buildFieldRows(uploadData) {
 
     return {
       field_key: fr.field_key,
-      status: isSkipped ? 'skipped' : (fr.status || mapping.status || 'missing'),
+      status: fr.status || mapping.status || 'missing',
       heading_in_doc: mapping.heading_in_doc || '—',
-      source: isSkipped ? 'manual' : (mapping.source || '—'),
-      confidence: isSkipped ? 0 : (mapping.confidence || 0),
+      source: mapping.source || '—',
+      confidence: mapping.confidence || 0,
       preview,
       charCount,
     };
@@ -558,6 +560,114 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
 /* ═══════════════════════════════════════
    MAIN VALIDATION SCREEN
    ═══════════════════════════════════════ */
+/* ═══════════════════════════════════════
+   PUBLISH TO WORDPRESS MODAL
+   ═══════════════════════════════════════ */
+function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
+  const [goLive, setGoLive] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [publishError, setPublishError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setResult(null);
+      setPublishError('');
+      setGoLive(false);
+    }
+  }, [isOpen]);
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    setPublishError('');
+    try {
+      const res = await fetch(`${API_BASE}/publish/${uploadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: goLive ? 'publish' : 'draft' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `Publish failed (${res.status})`);
+      setResult(body);
+      showToast(
+        goLive ? 'Published live on WordPress!' : 'Saved as a WordPress draft!',
+        'success'
+      );
+    } catch (err) {
+      setPublishError(err.message || 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Publish to WordPress">
+      {!result ? (
+        <>
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 16 }}>
+            {alreadyPublished
+              ? 'This upload was already published — publishing again updates that same WordPress post.'
+              : 'This creates a new WordPress post populated with all ACF fields from this upload, including any uploaded images.'}
+          </p>
+          <Toggle
+            checked={goLive}
+            onChange={setGoLive}
+            label={goLive ? 'Publish live (public immediately)' : 'Save as draft (recommended)'}
+            id="toggle-publish-live"
+          />
+          {publishError && (
+            <div style={{
+              marginTop: 16, padding: '10px 14px', background: '#FEE2E2',
+              color: '#DC2626', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
+            }}>
+              ⚠ {publishError}
+            </div>
+          )}
+          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
+            <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-publish">
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} id="btn-confirm-publish">
+              {publishing ? (
+                <>
+                  <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  Publishing…
+                </>
+              ) : (
+                goLive ? 'Publish Live' : 'Save Draft to WordPress'
+              )}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{
+            padding: '12px 16px', background: '#ECFDF5', color: '#059669',
+            borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16,
+          }}>
+            ✓ {result.wp_status === 'publish' ? 'Published live' : 'Saved as draft'} on WordPress (post #{result.wp_post_id})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <a href={result.wp_edit_link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ textAlign: 'center' }}>
+              Open in WordPress Editor →
+            </a>
+            {result.wp_post_url && (
+              <a href={result.wp_post_url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ textAlign: 'center' }}>
+                View Post →
+              </a>
+            )}
+          </div>
+          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
+            <button className="btn btn-secondary" onClick={onClose} id="btn-close-publish-result">
+              Close
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 export default function ValidationScreen() {
   const { uploadId } = useParams();
   const location = useLocation();
@@ -565,6 +675,7 @@ export default function ValidationScreen() {
   const [loading, setLoading] = useState(!data);
   const [error, setError] = useState(null);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   useEffect(() => {
     if (data) return;
@@ -660,6 +771,9 @@ export default function ValidationScreen() {
   return (
     <div id="validation-screen">
       <TopBar title="Validation Results" subtitle={data?.filename || ''}>
+        <Link to={`/upload/${uploadId}/images`} state={{ uploadData: data }} className="btn btn-secondary" id="btn-back-to-images">
+          🖼️ Images
+        </Link>
         <Link to={`/upload/${uploadId}/mapping`} state={{ uploadData: data }} className="btn btn-secondary" id="btn-fix-mappings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -669,7 +783,7 @@ export default function ValidationScreen() {
         </Link>
       </TopBar>
 
-      <StepIndicator currentStep={2} />
+      <StepIndicator currentStep={3} />
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>
@@ -812,6 +926,15 @@ export default function ValidationScreen() {
         <Link to={`/upload/${uploadId}/mapping`} state={{ uploadData: data }} className="btn btn-primary" id="btn-go-fix-mappings">
           Fix Mappings →
         </Link>
+
+        <button
+          className="btn btn-primary"
+          onClick={() => setPublishModalOpen(true)}
+          id="btn-publish-wordpress"
+          style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+        >
+          🚀 Publish to WordPress
+        </button>
       </div>
 
       {/* JSON Editor Slide-over Modal */}
@@ -822,6 +945,14 @@ export default function ValidationScreen() {
         initialPayload={data?.payload || {}}
         initialPageType={data?.page_type || 'university'}
         onSaved={handleJsonSaved}
+      />
+
+      {/* Publish to WordPress Modal */}
+      <PublishModal
+        isOpen={publishModalOpen}
+        onClose={() => setPublishModalOpen(false)}
+        uploadId={uploadId}
+        alreadyPublished={!!data?.payload?._meta?.wp_post_id}
       />
     </div>
   );

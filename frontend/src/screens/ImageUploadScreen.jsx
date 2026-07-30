@@ -52,7 +52,7 @@ export default function ImageUploadScreen() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('slot', slotKey);
+      formData.append('slot_name', slotKey);
       formData.append('upload_id', uploadId);
 
       const res = await fetch(`${API_BASE}/upload-image`, {
@@ -60,8 +60,24 @@ export default function ImageUploadScreen() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Image upload failed');
-      showToast(`${slotKey.replace(/_/g, ' ')} uploaded`, 'success');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Image upload failed');
+      }
+
+      const result = await res.json();
+      // Track the real stored URL (WordPress media or local fallback) so
+      // downstream screens know the field is genuinely populated.
+      setImages((prev) => ({
+        ...prev,
+        [slotKey]: { ...prev[slotKey], url: result.url, source: result.source, warning: result.warning },
+      }));
+      if (result.warning) {
+        // Local-only fallback — this URL will NOT be reachable once published.
+        showToast(result.warning, 'warning', 8000);
+      } else {
+        showToast(`${slotKey.replace(/_/g, ' ')} uploaded to WordPress media library`, 'success');
+      }
     } catch (err) {
       showToast(err.message || 'Image upload failed', 'error');
     } finally {
@@ -107,6 +123,19 @@ export default function ImageUploadScreen() {
                   {img ? (
                     <>
                       <img src={img.preview} alt={slot.label} className="image-preview" />
+                      {img.warning && (
+                        <div
+                          title={img.warning}
+                          style={{
+                            marginTop: 6, fontSize: '0.6875rem', fontWeight: 700,
+                            color: '#B45309', background: '#FEF3C7', border: '1px solid #FDE68A',
+                            borderRadius: 'var(--radius-full)', padding: '2px 8px',
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                          }}
+                        >
+                          ⚠ Local only — won't work once published
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: 8, padding: '0 4px' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
                           {img.name}
@@ -160,9 +189,10 @@ export default function ImageUploadScreen() {
         </div>
 
         <div className="card-footer" style={{ justifyContent: 'space-between' }}>
+          {/* No uploadData passed onward — ValidationScreen re-fetches fresh
+              so any images uploaded here (now part of the ACF payload) show up. */}
           <Link
             to={`/upload/${uploadId}/validation`}
-            state={{ uploadData }}
             className="btn btn-ghost"
             id="btn-skip-images"
           >
@@ -170,7 +200,7 @@ export default function ImageUploadScreen() {
           </Link>
           <button
             className="btn btn-primary"
-            onClick={() => navigate(`/upload/${uploadId}/validation`, { state: { uploadData } })}
+            onClick={() => navigate(`/upload/${uploadId}/validation`)}
             id="btn-continue-validation"
           >
             Continue to Validation

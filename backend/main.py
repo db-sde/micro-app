@@ -10,7 +10,8 @@ POST   /bulk                 Upload a .zip of .docx files for batch processing
 GET    /bulk/{job_id}/progress   Check bulk-job progress
 GET    /history              List all past uploads
 DELETE /history/{upload_id}  Delete an upload
-POST   /upload-image         Upload an image associated with an upload
+POST   /upload-image         Upload an image, store its URL on an ACF field
+POST   /publish/{upload_id}  Publish an upload's ACF payload to WordPress
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,8 @@ from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.validator import validate_payload
 from pipeline.service import run_extraction_pipeline
 from pipeline.blog_pipeline import generate_blog_summary
+from pipeline import wordpress_client
+from acf.fields import get_image_field_keys
 
 # ────────────────────────── logging ──────────────────────────
 
@@ -76,6 +80,10 @@ UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 IMAGE_DIR = UPLOAD_DIR / "images"
 IMAGE_DIR.mkdir(exist_ok=True)
+
+# Serve locally-stored images over HTTP — used as a fallback URL source
+# when WordPress media upload is not configured or fails.
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ────────────────────────── startup ──────────────────────────
 
@@ -113,6 +121,11 @@ class ConfirmRequest(BaseModel):
 class PatchPayloadRequest(BaseModel):
     payload: dict
     page_type: str | None = None  # optional re-classification
+
+
+class PublishRequest(BaseModel):
+    status: str = "draft"   # draft | publish | pending
+    title: str | None = None
 
 
 # ────────────────────────── helpers ──────────────────────────
@@ -754,6 +767,12 @@ async def delete_upload(upload_id: int, db: Session = Depends(get_db)):
     return {"deleted": True, "upload_id": upload_id}
 
 
+_IMAGE_CONTENT_TYPES = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+}
+
+
 @app.post("/upload-image")
 async def upload_image(
     file: UploadFile = File(...),
@@ -761,7 +780,21 @@ async def upload_image(
     slot_name: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    """Upload an image file associated with a specific upload and slot."""
+    """Upload an image for a given ACF image field ("slot") on an upload.
+
+    The image is pushed to the WordPress media library and the resulting
+    media URL is written directly into the upload's ACF payload under
+    ``slot_name`` — so it is present in the JSON returned by ``/download``
+    and ``/upload/{id}`` without any further action.
+
+    If WordPress is configured but the upload call fails, this raises a 502
+    rather than silently falling back to local disk: a URL served by this
+    backend's own machine is very likely unreachable from WordPress (or
+    anywhere else) once published, so a loud, retryable error is safer than
+    quietly writing a dead URL into the field. Local-disk fallback only
+    applies when WordPress isn't configured at all (pure local dev/testing),
+    and the response carries an explicit ``warning`` in that case.
+    """
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found.")
@@ -769,28 +802,216 @@ async def upload_image(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
 
-    # Validate image extension
-    allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
     ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in allowed_extensions:
+    if ext not in _IMAGE_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported image format: {ext}. Allowed: {', '.join(allowed_extensions)}",
+            detail=f"Unsupported image format: {ext}. Allowed: {', '.join(_IMAGE_CONTENT_TYPES)}",
         )
 
-    # Save file
-    timestamp = int(time.time())
-    safe_name = f"{upload_id}_{slot_name}_{timestamp}{ext}"
-    file_path = IMAGE_DIR / safe_name
+    page_type = upload.page_type or "university"
+    valid_slots = get_image_field_keys(page_type)
+    if slot_name not in valid_slots:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid slot_name {slot_name!r} for page_type {page_type!r}. "
+                f"Must be one of: {', '.join(sorted(valid_slots))}"
+            ),
+        )
 
     content = await file.read()
-    file_path.write_bytes(content)
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    mime_type = _IMAGE_CONTENT_TYPES[ext]
+    timestamp = int(time.time())
+    safe_name = f"{upload_id}_{slot_name}_{timestamp}{ext}"
+
+    image_url: str
+    wp_media_id: int | None = None
+    image_source: str
+    warning: str | None = None
+
+    if wordpress_client.is_configured():
+        # WordPress is the intended destination for this URL. If the upload
+        # fails here, do NOT fall back to a local URL — a file served by
+        # this backend's own machine is generally unreachable from
+        # WordPress (or anyone else) once published, so surfacing a clear,
+        # retryable error is safer than silently writing in a dead link.
+        try:
+            media = wordpress_client.upload_media(content, safe_name, mime_type)
+            image_url = media["source_url"]
+            wp_media_id = media["id"]
+            image_source = "wordpress"
+        except Exception as exc:
+            logger.error(
+                "WordPress media upload failed for upload %d slot %r: %s",
+                upload_id, slot_name, exc,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"WordPress media upload failed: {exc}. Check that the site is "
+                    f"reachable from this server, the Application Password is valid "
+                    f"and has upload permission, and the media REST route isn't "
+                    f"blocked by a security plugin/WAF. Not falling back to local "
+                    f"storage, since that URL would not be reachable from WordPress."
+                ),
+            )
+    else:
+        # WordPress isn't configured at all — pure local dev/testing path.
+        # This URL is only reachable from wherever THIS backend is running;
+        # it will not work once the JSON is published elsewhere unless
+        # BACKEND_PUBLIC_URL is set to a publicly reachable address.
+        file_path = IMAGE_DIR / safe_name
+        file_path.write_bytes(content)
+        backend_base = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+        image_url = f"{backend_base}/uploads/images/{safe_name}"
+        image_source = "local"
+        warning = (
+            f"WordPress is not configured on this server — this image was stored "
+            f"locally at {image_url}, which is only reachable from wherever this "
+            f"backend is running. Set WORDPRESS_SITE_URL / WORDPRESS_APP_USER / "
+            f"WORDPRESS_APP_PASSWORD to get a URL that works once published."
+        )
+
+    # ── Persist the URL directly into the ACF payload ──
+    existing_payload: dict[str, Any] = {}
+    if upload.payload:
+        try:
+            existing_payload = json.loads(upload.payload)
+        except json.JSONDecodeError:
+            existing_payload = {}
+
+    existing_payload[slot_name] = image_url
+    upload.payload = json.dumps(existing_payload, ensure_ascii=False)
+
+    # Upsert the field mapping row so the UI/validation reflects the new value
+    fm = (
+        db.query(FieldMapping)
+        .filter(FieldMapping.upload_id == upload_id, FieldMapping.field_key == slot_name)
+        .first()
+    )
+    mapping_source = "WORDPRESS" if image_source == "wordpress" else "LOCAL_UPLOAD"
+    if fm:
+        fm.value = image_url
+        fm.heading_in_doc = "[image upload]"
+        fm.confidence = 1.0
+        fm.status = "mapped"
+        fm.source = mapping_source
+        fm.is_confirmed = True
+    else:
+        fm = FieldMapping(
+            upload_id=upload_id,
+            field_key=slot_name,
+            heading_in_doc="[image upload]",
+            value=image_url,
+            confidence=1.0,
+            status="mapped",
+            source=mapping_source,
+            is_confirmed=True,
+        )
+        db.add(fm)
+
+    # Re-validate so the quality score reflects the newly-filled image field
+    validation = validate_payload(existing_payload, page_type)
+    upload.score = validation["summary"]["quality_score"]
+
+    db.commit()
+    db.refresh(upload)
 
     return {
         "upload_id": upload_id,
         "slot_name": slot_name,
-        "file_path": str(file_path),
-        "filename": safe_name,
+        "url": image_url,
+        "wp_media_id": wp_media_id,
+        "source": image_source,
+        "warning": warning,
+        "payload": existing_payload,
+        "validation": validation,
+    }
+
+
+@app.post("/publish/{upload_id}")
+async def publish_to_wordpress(
+    upload_id: int,
+    body: PublishRequest = PublishRequest(),
+    db: Session = Depends(get_db),
+):
+    """Publish an upload's ACF JSON payload directly to WordPress.
+
+    Creates a post of the CPT matching the upload's page_type (see
+    ``wordpress_client.get_post_type``) with all ACF fields — including any
+    image URLs set via ``/upload-image`` — attached under the ``acf`` key.
+
+    Defaults to ``status="draft"``. If this upload was already published
+    once (tracked in ``payload._meta.wp_post_id``), re-publishing updates
+    that same post instead of creating a duplicate.
+    """
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
+    if not upload.payload:
+        raise HTTPException(
+            status_code=400,
+            detail="No payload available for this upload. Process the document first.",
+        )
+
+    try:
+        payload_data = json.loads(upload.payload)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Stored payload is corrupted JSON.")
+
+    page_type = upload.page_type or "university"
+    if page_type not in ("university", "course", "specialization"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Publishing is only supported for university/course/specialization pages, got {page_type!r}.",
+        )
+
+    if not wordpress_client.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "WordPress is not configured on the server "
+                "(missing WORDPRESS_SITE_URL / WORDPRESS_APP_USER / WORDPRESS_APP_PASSWORD)."
+            ),
+        )
+
+    existing_post_id = (payload_data.get("_meta") or {}).get("wp_post_id")
+
+    try:
+        result = wordpress_client.publish_payload(
+            payload_data,
+            page_type,
+            status=body.status,
+            post_id=existing_post_id,
+            title=body.title,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("WordPress publish failed for upload %d: %s", upload_id, exc)
+        raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}")
+
+    # Track the WP post reference in the payload so re-publishing updates it
+    payload_data.setdefault("_meta", {})
+    payload_data["_meta"]["wp_post_id"] = result["id"]
+    payload_data["_meta"]["wp_post_url"] = result["link"]
+    payload_data["_meta"]["wp_status"] = result["status"]
+    upload.payload = json.dumps(payload_data, ensure_ascii=False)
+    upload.status = "published" if result["status"] == "publish" else "draft_published"
+    db.commit()
+    db.refresh(upload)
+
+    return {
+        "upload_id": upload_id,
+        "wp_post_id": result["id"],
+        "wp_post_url": result["link"],
+        "wp_edit_link": result["edit_link"],
+        "wp_status": result["status"],
     }
 
 

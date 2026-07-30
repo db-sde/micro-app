@@ -103,9 +103,22 @@ The backend exposes the following endpoints (relative to `http://localhost:8000`
 | `/bulk/{job_id}/progress` | `GET` | Query progress/results status of a bulk upload job |
 | `/history` | `GET` | List metadata of all past uploads (paginated) |
 | `/history/{upload_id}` | `DELETE` | Delete an upload record and its associated field mappings |
-| `/upload-image` | `POST` | Upload an image associated with a specific upload and slot |
+| `/upload-image` | `POST` | Upload an image for a slot (`hero_image`/`logo`/`certificate_image`); pushes it to the WordPress media library (local-disk fallback) and stores the resulting URL directly on that ACF field |
+| `/publish/{upload_id}` | `POST` | Publish an upload's ACF JSON payload to WordPress as a post of the matching CPT (`draft` by default); re-publishing updates the same post |
 | `/parse` | `POST` | Debug endpoint to return raw document parse output only |
 | `/health` | `GET` | Service health status ping |
+
+### WordPress publishing setup
+
+Add these to `backend/.env` (see `.env.example`):
+
+```env
+WORDPRESS_SITE_URL=https://your-wordpress-site.com
+WORDPRESS_APP_USER=your_wp_username
+WORDPRESS_APP_PASSWORD=xxxx xxxx xxxx xxxx xxxx xxxx
+```
+
+Generate the Application Password under **WP Admin → Users → Profile → Application Passwords**. `/publish` assumes ACF fields are exposed over the REST API (ACF PRO 5.11+ with "Show in REST API" enabled per field group, or the ACF to REST API plugin) and that each page type (`university`/`course`/`specialization`) maps to a same-named custom post type — override per-type via `WORDPRESS_POST_TYPE_UNIVERSITY` / `_COURSE` / `_SPECIALIZATION` if your CPT slugs differ.
 
 ---
 

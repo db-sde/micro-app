@@ -576,7 +576,8 @@ export function Modal({ isOpen, onClose, title, children }) {
 export function StepIndicator({ currentStep }) {
   const steps = [
     { num: 1, label: 'Upload' },
-    { num: 2, label: 'Validation' },
+    { num: 2, label: 'Images' },
+    { num: 3, label: 'Validation' },
   ];
 
   return (
