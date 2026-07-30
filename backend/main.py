@@ -47,6 +47,7 @@ from pipeline.validator import validate_payload
 from pipeline.service import run_extraction_pipeline
 from pipeline.blog_pipeline import generate_blog_summary
 from pipeline import wordpress_client
+from pipeline import cloudinary_client
 from acf.fields import get_image_field_keys
 
 # ────────────────────────── logging ──────────────────────────
@@ -782,18 +783,20 @@ async def upload_image(
 ):
     """Upload an image for a given ACF image field ("slot") on an upload.
 
-    The image is pushed to the WordPress media library and the resulting
-    media URL is written directly into the upload's ACF payload under
-    ``slot_name`` — so it is present in the JSON returned by ``/download``
-    and ``/upload/{id}`` without any further action.
+    The image is pushed to Cloudinary and the resulting delivery URL is
+    written directly into the upload's ACF payload under ``slot_name`` — so
+    it is present in the JSON returned by ``/download`` and ``/upload/{id}``
+    without any further action, and gets sent to WordPress as a plain URL
+    string under the "acf" key on publish. WordPress never needs to host
+    the file itself.
 
-    If WordPress is configured but the upload call fails, this raises a 502
-    rather than silently falling back to local disk: a URL served by this
-    backend's own machine is very likely unreachable from WordPress (or
-    anywhere else) once published, so a loud, retryable error is safer than
-    quietly writing a dead URL into the field. Local-disk fallback only
-    applies when WordPress isn't configured at all (pure local dev/testing),
-    and the response carries an explicit ``warning`` in that case.
+    If Cloudinary is configured but the upload call fails, this raises a
+    502 rather than silently falling back to local disk: a URL served by
+    this backend's own machine is very likely unreachable once published,
+    so a loud, retryable error is safer than quietly writing a dead URL
+    into the field. Local-disk fallback only applies when Cloudinary isn't
+    configured at all (pure local dev/testing), and the response carries
+    an explicit ``warning`` in that case.
     """
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
@@ -824,43 +827,41 @@ async def upload_image(
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    mime_type = _IMAGE_CONTENT_TYPES[ext]
     timestamp = int(time.time())
     safe_name = f"{upload_id}_{slot_name}_{timestamp}{ext}"
 
     image_url: str
-    wp_media_id: int | None = None
+    media_id: str | None = None
     image_source: str
     warning: str | None = None
 
-    if wordpress_client.is_configured():
-        # WordPress is the intended destination for this URL. If the upload
-        # fails here, do NOT fall back to a local URL — a file served by
-        # this backend's own machine is generally unreachable from
-        # WordPress (or anyone else) once published, so surfacing a clear,
-        # retryable error is safer than silently writing in a dead link.
+    if cloudinary_client.is_configured():
+        # Cloudinary is the intended destination for this URL. If the
+        # upload fails here, do NOT fall back to a local URL — a file
+        # served by this backend's own machine is generally unreachable
+        # once published, so surfacing a clear, retryable error is safer
+        # than silently writing in a dead link.
         try:
-            media = wordpress_client.upload_media(content, safe_name, mime_type)
-            image_url = media["source_url"]
-            wp_media_id = media["id"]
-            image_source = "wordpress"
+            media = cloudinary_client.upload_image(content, safe_name)
+            image_url = media["url"]
+            media_id = media["public_id"]
+            image_source = "cloudinary"
         except Exception as exc:
             logger.error(
-                "WordPress media upload failed for upload %d slot %r: %s",
+                "Cloudinary upload failed for upload %d slot %r: %s",
                 upload_id, slot_name, exc,
             )
             raise HTTPException(
                 status_code=502,
                 detail=(
-                    f"WordPress media upload failed: {exc}. Check that the site is "
-                    f"reachable from this server, the Application Password is valid "
-                    f"and has upload permission, and the media REST route isn't "
-                    f"blocked by a security plugin/WAF. Not falling back to local "
-                    f"storage, since that URL would not be reachable from WordPress."
+                    f"Cloudinary upload failed: {exc}. Check that CLOUDINARY_URL "
+                    f"(or CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/"
+                    f"CLOUDINARY_API_SECRET) is correct. Not falling back to local "
+                    f"storage, since that URL would not be reachable once published."
                 ),
             )
     else:
-        # WordPress isn't configured at all — pure local dev/testing path.
+        # Cloudinary isn't configured at all — pure local dev/testing path.
         # This URL is only reachable from wherever THIS backend is running;
         # it will not work once the JSON is published elsewhere unless
         # BACKEND_PUBLIC_URL is set to a publicly reachable address.
@@ -870,10 +871,10 @@ async def upload_image(
         image_url = f"{backend_base}/uploads/images/{safe_name}"
         image_source = "local"
         warning = (
-            f"WordPress is not configured on this server — this image was stored "
+            f"Cloudinary is not configured on this server — this image was stored "
             f"locally at {image_url}, which is only reachable from wherever this "
-            f"backend is running. Set WORDPRESS_SITE_URL / WORDPRESS_APP_USER / "
-            f"WORDPRESS_APP_PASSWORD to get a URL that works once published."
+            f"backend is running. Set CLOUDINARY_URL to get a URL that works once "
+            f"published."
         )
 
     # ── Persist the URL directly into the ACF payload ──
@@ -916,7 +917,7 @@ async def upload_image(
         .filter(FieldMapping.upload_id == upload_id, FieldMapping.field_key == slot_name)
         .first()
     )
-    mapping_source = "WORDPRESS" if image_source == "wordpress" else "LOCAL_UPLOAD"
+    mapping_source = "CLOUDINARY" if image_source == "cloudinary" else "LOCAL_UPLOAD"
     if fm:
         fm.value = image_url
         fm.heading_in_doc = "[image upload]"
@@ -948,7 +949,7 @@ async def upload_image(
         "upload_id": upload_id,
         "slot_name": slot_name,
         "url": image_url,
-        "wp_media_id": wp_media_id,
+        "media_id": media_id,
         "source": image_source,
         "warning": warning,
         "payload": existing_payload,

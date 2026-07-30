@@ -66,7 +66,7 @@ export default function ImageUploadScreen() {
       }
 
       const result = await res.json();
-      // Track the real stored URL (WordPress media or local fallback) so
+      // Track the real stored URL (Cloudinary or local fallback) so
       // downstream screens know the field is genuinely populated.
       setImages((prev) => ({
         ...prev,
@@ -76,7 +76,7 @@ export default function ImageUploadScreen() {
         // Local-only fallback — this URL will NOT be reachable once published.
         showToast(result.warning, 'warning', 8000);
       } else {
-        showToast(`${slotKey.replace(/_/g, ' ')} uploaded to WordPress media library`, 'success');
+        showToast(`${slotKey.replace(/_/g, ' ')} uploaded to Cloudinary`, 'success');
       }
     } catch (err) {
       showToast(err.message || 'Image upload failed', 'error');

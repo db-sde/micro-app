@@ -1,5 +1,5 @@
 """
-WordPress REST API client — media uploads + ACF post publishing.
+WordPress REST API client — ACF post publishing.
 
 Auth: WordPress Application Passwords (Basic Auth). Configure via .env:
 
@@ -18,11 +18,14 @@ Assumes the target site exposes ACF fields over REST (ACF PRO 5.11+ with
 "Show in REST API" enabled per field group, or the ACF to REST API plugin) —
 publish_payload() sends field values under the "acf" key on create/update.
 
+Image fields are populated separately, via pipeline.cloudinary_client —
+their values are already plain URL strings by the time they reach here,
+same as any other field.
+
 Public API
 ----------
-is_configured()                                   -> bool
-upload_media(file_bytes, filename, content_type)  -> dict {id, source_url, link}
-publish_payload(payload, page_type, status, post_id=None) -> dict
+is_configured()                                           -> bool
+publish_payload(payload, page_type, status, post_id=None)  -> dict
 """
 
 from __future__ import annotations
@@ -77,45 +80,6 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
         raise RuntimeError(
             f"WordPress API error ({resp.status_code}): {message}"
         )
-
-
-# ────────────────────────── media upload ──────────────────────────
-
-
-def upload_media(file_bytes: bytes, filename: str, content_type: str) -> dict[str, Any]:
-    """Upload an image to the WordPress media library.
-
-    Returns ``{"id": int, "source_url": str, "link": str}``.
-    Raises RuntimeError if WordPress is not configured or the call fails.
-    """
-    if not is_configured():
-        raise RuntimeError(
-            "WordPress is not configured (WORDPRESS_SITE_URL / "
-            "WORDPRESS_APP_USER / WORDPRESS_APP_PASSWORD missing)."
-        )
-
-    url = f"{_site_url()}/wp-json/wp/v2/media"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Content-Type": content_type,
-    }
-
-    with httpx.Client(timeout=_TIMEOUT) as client:
-        resp = client.post(
-            url,
-            content=file_bytes,
-            headers=headers,
-            auth=_auth(),
-        )
-    _raise_for_wp_error(resp)
-
-    data = resp.json()
-    logger.info("WP_MEDIA_UPLOADED: id=%s url=%s", data.get("id"), data.get("source_url"))
-    return {
-        "id": data.get("id"),
-        "source_url": data.get("source_url"),
-        "link": data.get("link"),
-    }
 
 
 # ────────────────────────── post publishing ──────────────────────────
