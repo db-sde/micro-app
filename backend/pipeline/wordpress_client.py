@@ -129,6 +129,92 @@ def _build_title(payload: dict[str, Any], page_type: str, fallback: str) -> str:
     return fallback
 
 
+def _escape_html(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _repeater_to_html_list(items: Any, title_key: str, desc_key: str) -> str | None:
+    """Reformat one of our JSON_ARRAY repeaters into a plain HTML <ul> list.
+
+    Used for fields where WordPress's real ACF field is a wysiwyg block
+    (facts_content, highlights_content), not a repeater — the repeater
+    shape is still the best way to EXTRACT this content, it just needs
+    reformatting into HTML on the way out to WordPress.
+    """
+    if not isinstance(items, list) or not items:
+        return None
+    rows = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = _escape_html(item.get(title_key) or "")
+        desc = _escape_html(item.get(desc_key) or "")
+        if title and desc:
+            rows.append(f"<li><strong>{title}</strong>: {desc}</li>")
+        elif title or desc:
+            rows.append(f"<li>{title or desc}</li>")
+    if not rows:
+        return None
+    return "<ul>\n" + "\n".join(rows) + "\n</ul>"
+
+
+# Fee tiers WordPress models as fixed, individually-named fields (not a
+# repeater) — different field names on course vs specialization. Our
+# extraction stays a flexible fee_plans repeater (plan_name/plan_amount/
+# plan_total); this maps recognized tier names onto WordPress's real
+# fields at publish time. Tiers we can't confidently identify are simply
+# left blank rather than guessed at.
+_FEE_TIER_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "semester": ("semester",),
+    "annual": ("annual", "yearly", "per year"),
+    "one_time": ("one-time", "one time", "onetime", "lump sum", "full payment", "single payment"),
+}
+
+_FEE_TIER_FIELD_MAP: dict[str, dict[str, tuple[str, str]]] = {
+    "course": {
+        "semester": ("semester_plan_amount", "semester_plan_amount_total"),
+        "annual": ("annual_plan_amount", "annual_plan_amount_total"),
+        "one_time": ("one-time_payment_amount", "one-time_payment_amount_total"),
+    },
+    "specialization": {
+        "semester": ("semester_plan_value", "semester_plan_total"),
+        "annual": ("annual_plan_value", "annual_plan_total"),
+        "one_time": ("one-time_payment_value", "one-time_payment_savings"),
+    },
+}
+
+
+def _remap_fee_plans(fee_plans: Any, page_type: str) -> dict[str, str]:
+    """Best-effort map our fee_plans repeater onto WordPress's fixed,
+    individually-named fee-tier fields. Matches by keyword in plan_name;
+    a plan that doesn't match any known tier is left out rather than
+    guessed at."""
+    tier_fields = _FEE_TIER_FIELD_MAP.get(page_type)
+    if not tier_fields or not isinstance(fee_plans, list):
+        return {}
+
+    out: dict[str, str] = {}
+    for row in fee_plans:
+        if not isinstance(row, dict):
+            continue
+        name_lower = str(row.get("plan_name") or "").lower()
+        for tier, keywords in _FEE_TIER_KEYWORDS.items():
+            if not any(kw in name_lower for kw in keywords):
+                continue
+            amount_key, total_key = tier_fields[tier]
+            if row.get("plan_amount") and amount_key not in out:
+                out[amount_key] = row["plan_amount"]
+            if row.get("plan_total") and total_key not in out:
+                out[total_key] = row["plan_total"]
+            break
+    return out
+
+
 def _upload_media_from_url(url: str, filename_hint: str) -> int:
     """Download an image from `url` and side-load it into the WordPress
     media library, returning the resulting attachment ID.
@@ -165,8 +251,8 @@ def _upload_media_from_url(url: str, filename_hint: str) -> int:
 
 
 # Reconciliation against the real WordPress ACF field group exports
-# (2026-07-31). Three categories of mismatch between our internal schema
-# and WordPress's actual registered field names:
+# (2026-07-31). Categories of mismatch between our internal schema and
+# WordPress's actual registered field names:
 #
 # 1. hero_image doesn't exist as an ACF field on ANY of the three page
 #    types — all three CPTs support "thumbnail" natively, so it's handled
@@ -175,11 +261,16 @@ def _upload_media_from_url(url: str, filename_hint: str) -> int:
 #
 # 2. Simple renames — the field exists, same shape, just a different name.
 #
-# 3. No WordPress equivalent at all for this page type, OR a structural
-#    mismatch (e.g. we send a plain string, WordPress has a repeater) —
-#    dropped rather than sent, since sending garbage 400s the ENTIRE acf
-#    object. These need a real remapping decision, tracked separately;
-#    until then, dropping keeps publish working for everything else.
+# 3. Structural mismatches with a real transform (see _repeater_to_html_list
+#    and _remap_fee_plans above): our facts/highlights repeaters become
+#    WordPress's facts_content/highlights_content wysiwyg field via HTML
+#    list formatting; eligibility_content is now extracted directly in the
+#    shape WordPress's repeater expects (see acf/fields.py); fee_plans maps
+#    onto WordPress's fixed per-tier fields via keyword matching.
+#
+# 4. No WordPress equivalent at all for this page type — dropped rather
+#    than sent, since sending an unrecognized key 400s the ENTIRE acf
+#    object.
 _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
     "specialization": {
         "certificate_image": "certificate_image_specialization",
@@ -190,15 +281,16 @@ _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
 _PUBLISH_FIELD_DROP: dict[str, set[str]] = {
     "university": {
         "certificate_image",  # no matching field for university pages at all
-        "facts",              # WP's "facts_content" is wysiwyg, not a repeater
     },
-    "course": {
-        "fee_plans",           # WP has flat per-tier fields, not a repeater
-        "eligibility_content",  # WP's is a repeater, we send a plain string
+}
+
+# Repeater -> wysiwyg HTML-list transforms: our_key -> (wp_key, title_subkey, desc_subkey).
+_PUBLISH_HTML_LIST_TRANSFORMS: dict[str, dict[str, tuple[str, str, str]]] = {
+    "university": {
+        "facts": ("facts_content", "fact_title", "fact_description"),
     },
     "specialization": {
-        "highlights",           # WP's "highlights_content" is wysiwyg, not a repeater
-        "eligibility_content",  # WP's is a repeater, we send a plain string
+        "highlights": ("highlights_content", "highlight_title", "highlight_description"),
     },
 }
 
@@ -317,6 +409,21 @@ def publish_payload(
     for our_key, wp_key in _PUBLISH_FIELD_RENAMES.get(page_type, {}).items():
         if our_key in acf_fields:
             acf_fields[wp_key] = acf_fields.pop(our_key)
+
+    # Reformat repeater fields whose real WordPress field is a wysiwyg
+    # HTML block, not a repeater (facts_content, highlights_content).
+    for our_key, (wp_key, title_key, desc_key) in _PUBLISH_HTML_LIST_TRANSFORMS.get(page_type, {}).items():
+        if our_key not in acf_fields:
+            continue
+        html = _repeater_to_html_list(acf_fields.pop(our_key), title_key, desc_key)
+        if html:
+            acf_fields[wp_key] = html
+
+    # Map our flexible fee_plans repeater onto WordPress's fixed,
+    # individually-named fee-tier fields (see _remap_fee_plans).
+    if "fee_plans" in acf_fields:
+        fee_plans = acf_fields.pop("fee_plans")
+        acf_fields.update(_remap_fee_plans(fee_plans, page_type))
 
     # WordPress declares these as a "number" field — coerce "3+" -> 3,
     # drop if it doesn't parse.

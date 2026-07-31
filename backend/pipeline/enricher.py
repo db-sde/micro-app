@@ -807,10 +807,13 @@ def _enrich_course_stats(
                     logger.info("ENRICHED: starting_fee = %r", payload["starting_fee"])
 
     # ── eligibility_summary: short one-liner from eligibility_content ──
+    # eligibility_content is a list of {eligibility_title, eligibility_description}
+    # objects (matches WordPress's real repeater field) — flatten before
+    # deriving a plain-text summary, same as any other structured value.
     if not payload.get("eligibility_summary"):
         elig = payload.get("eligibility_content", "")
         if elig:
-            flat = _strip_html(str(elig)).strip()
+            flat = _strip_html(_flatten_value(elig)).strip()
             # First sentence or first 120 chars
             m = re.match(r"([^.!?]{20,120}[.!?])", flat)
             if m:

@@ -84,6 +84,8 @@ other_specs:      [{"other_spec_name": "Finance", "other_spec_fee": "₹1,75,000
 job_profiles:     [{"job_title": "Business Analyst", "avg_salary": "INR 5 LPA"}]
 reviews:          [{"review_text": "Great experience...", "reviewer_name": "Rahul S.", "reviewer_label": "MBA Graduate, 2024"}]
 faqs:             [{"question": "Is the degree valid?", "answer": "Yes, UGC entitled."}]
+eligibility_content: [{"eligibility_title": "Academic Qualification", "eligibility_description": "Bachelor's degree from a recognized university with 50% marks"}]
+  Split eligibility criteria into separate points by concept (qualification, minimum marks, work experience, age limit, etc.) — one object per distinct criterion, not one giant paragraph. If the source only has one continuous sentence with no clearly separate criteria, return a single object with a short generic title like "Eligibility Criteria".
 """
 
 # ────────────────────────── stat question map ──────────────────────────

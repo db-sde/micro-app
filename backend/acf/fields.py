@@ -93,7 +93,8 @@ ACF_FIELDS = {
         # Content
         {'key': 'about_content',        'type': HTML,     'embed': 'about program description overview introduction body'},
         {'key': 'specializations_intro', 'type': TEXT,     'embed': 'specializations intro one line subtitle pick choose from'},
-        {'key': 'eligibility_content',   'type': HTML,     'embed': 'eligibility criteria who can apply requirements qualification'},
+        {'key': 'eligibility_content',   'type': JSON_ARRAY, 'embed': 'eligibility criteria who can apply requirements qualification',
+         'sub_fields': [{'key': 'eligibility_title', 'type': TEXT}, {'key': 'eligibility_description', 'type': TEXTAREA}]},
         {'key': 'admission_steps',       'type': HTML,     'embed': 'admission process steps how to apply procedure enrollment'},
         {'key': 'admission_fee_note',    'type': TEXT,     'embed': 'admission fee note application fee charges'},
         {'key': 'syllabus_content',      'type': HTML,     'embed': 'syllabus curriculum subjects semester year module topics'},
@@ -149,7 +150,8 @@ ACF_FIELDS = {
         {'key': 'faqs_heading',           'type': TEXT, 'embed': 'faqs heading frequently asked questions title'},
         # Content
         {'key': 'about_content',        'type': HTML,     'embed': 'about specialization description overview introduction body'},
-        {'key': 'eligibility_content',  'type': HTML,     'embed': 'eligibility criteria who can apply requirements qualification'},
+        {'key': 'eligibility_content',  'type': JSON_ARRAY, 'embed': 'eligibility criteria who can apply requirements qualification',
+         'sub_fields': [{'key': 'eligibility_title', 'type': TEXT}, {'key': 'eligibility_description', 'type': TEXTAREA}]},
         {'key': 'syllabus_content',     'type': HTML,     'embed': 'syllabus curriculum subjects semester module topics'},
         {'key': 'exam_content',         'type': HTML,     'embed': 'exam pattern proctored examination semester internal term end'},
         {'key': 'admission_steps',      'type': HTML,     'embed': 'admission process steps how to apply procedure enrollment'},
@@ -161,6 +163,8 @@ ACF_FIELDS = {
         # Repeaters
         {'key': 'highlights',           'type': JSON_ARRAY, 'embed': 'highlights program features benefits USPs key points',
          'sub_fields': [{'key': 'highlight_title', 'type': TEXT}, {'key': 'highlight_description', 'type': TEXT}]},
+        {'key': 'fee_plans',            'type': JSON_ARRAY, 'embed': 'fee plans payment options semester annual one time total',
+         'sub_fields': [{'key': 'plan_name', 'type': TEXT}, {'key': 'plan_amount', 'type': TEXT}, {'key': 'plan_total', 'type': TEXT}]},
         {'key': 'other_specs',          'type': JSON_ARRAY, 'embed': 'other specializations explore related alternatives list',
          'sub_fields': [{'key': 'other_spec_name', 'type': TEXT}, {'key': 'other_spec_fee', 'type': TEXT}]},
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities average salary',
