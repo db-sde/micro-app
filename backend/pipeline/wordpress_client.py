@@ -245,21 +245,39 @@ def publish_payload(
             ) from exc
 
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
-
-    body = {
-        "title": post_title,
-        "status": status,
-        "acf": acf_fields,
-    }
-
     base_url = f"{_site_url()}/wp-json/wp/v2/{post_type}"
-    url = f"{base_url}/{post_id}" if post_id else base_url
 
-    with httpx.Client(timeout=_TIMEOUT) as client:
-        resp = client.post(url, json=body, auth=_auth())
-    _raise_for_wp_error(resp)
+    if post_id:
+        # Updating an already-published post: title + status + acf together
+        # in one request reliably persists the acf data — confirmed
+        # directly against this site (a test write to an existing post
+        # round-tripped correctly).
+        body = {"title": post_title, "status": status, "acf": acf_fields}
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            resp = client.post(f"{base_url}/{post_id}", json=body, auth=_auth())
+        _raise_for_wp_error(resp)
+        data = resp.json()
+    else:
+        # Creating a brand new post: sending "acf" in the SAME request that
+        # creates the post silently drops the acf data on this site — the
+        # post gets created (title/status persist fine) but every acf
+        # field comes back empty, confirmed by directly inspecting stored
+        # posts. Splitting into create-then-update (which we've confirmed
+        # DOES persist acf data) works around it with no WordPress-side
+        # change needed.
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            create_resp = client.post(
+                base_url, json={"title": post_title, "status": status}, auth=_auth()
+            )
+        _raise_for_wp_error(create_resp)
+        new_id = create_resp.json().get("id")
 
-    data = resp.json()
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            resp = client.post(
+                f"{base_url}/{new_id}", json={"acf": acf_fields}, auth=_auth()
+            )
+        _raise_for_wp_error(resp)
+        data = resp.json()
     wp_id = data.get("id")
     site = _site_url()
     result = {
