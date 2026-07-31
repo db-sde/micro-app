@@ -97,7 +97,9 @@ The backend exposes the following endpoints (relative to `http://localhost:8000`
 | :--- | :--- | :--- |
 | `/upload` | `POST` | Upload a single `.docx` file and run the full pipeline |
 | `/upload-blog` | `POST` | Upload a `.docx` file for a blog/category page and get a 4-5 point summary |
+| `/upload/{upload_id}` | `GET` | Fetch an upload's full payload, validation report, and field mappings |
 | `/confirm/{upload_id}` | `POST` | Update field mapping overrides and trigger validation recalculation |
+| `/payload/{upload_id}` | `PATCH` | Overwrite the ACF payload with manually-edited JSON (from the JSON editor) and re-validate; can also reclassify the page type |
 | `/download/{upload_id}` | `GET` | Fetch the final WordPress ACF JSON payload |
 | `/bulk` | `POST` | Upload a `.zip` containing multiple `.docx` files to process in the background |
 | `/bulk/{job_id}/progress` | `GET` | Query progress/results status of a bulk upload job |
@@ -130,9 +132,15 @@ WORDPRESS_APP_PASSWORD=xxxx xxxx xxxx xxxx xxxx xxxx
 
 Generate the Application Password under **WP Admin → Users → Profile → Application Passwords**. `/publish` assumes ACF fields are exposed over the REST API (ACF PRO 5.11+ with "Show in REST API" enabled per field group, or the ACF to REST API plugin) and that each page type (`university`/`course`/`specialization`) maps to a same-named custom post type — override per-type via `WORDPRESS_POST_TYPE_UNIVERSITY` / `_COURSE` / `_SPECIALIZATION` if your CPT slugs differ.
 
+**Behavior worth knowing about**, all implemented in `pipeline/wordpress_client.py`:
+- New posts are created in two requests (title/status, then a follow-up update with the `acf` data) — including `acf` in the same request that creates the post silently drops the field data on some WordPress/ACF setups. Updating an already-published post works fine in one request.
+- `hero_image` has no ACF field on any page type — it's side-loaded to the WordPress media library and set as the post's native **Featured Image** instead.
+- Our internal extraction schema (`acf/fields.py`) doesn't necessarily match your WordPress field group's real field *names* one-for-one. `_PUBLISH_FIELD_RENAMES` / `_PUBLISH_FIELD_DROP` / `_repeater_to_html_list` / `_remap_fee_plans` in `wordpress_client.py` reconcile the two — if you add or rename fields in WordPress's ACF field groups, check whether one of these needs a matching update, or `/publish` will drop that field (logged as a warning, not an error) rather than send something WordPress will reject.
+
 ---
 
 ## Development Notes
 
 - **Database:** Uses PostgreSQL (integrated with Neon Serverless Postgres). Tables are automatically created/synced at backend startup via SQLAlchemy..
 - **Background Workers:** Bulk zip files are processed sequentially in-process via FastAPI's `BackgroundTasks` helper. No Redis server or Celery worker execution is needed.
+- **Frontend SPA routing on Vercel:** `frontend/vercel.json` rewrites every path to `index.html` so client-side routes (e.g. `/upload/123/validation`) work on a direct load or page refresh, not just via in-app navigation. If you redeploy the frontend somewhere other than Vercel, make sure that host has an equivalent SPA fallback rule.
