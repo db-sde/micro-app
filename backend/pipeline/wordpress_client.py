@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import re
 from typing import Any
 
 import httpx
@@ -163,6 +164,51 @@ def _upload_media_from_url(url: str, filename_hint: str) -> int:
     return attachment_id
 
 
+# Reconciliation against the real WordPress ACF field group exports
+# (2026-07-31). Three categories of mismatch between our internal schema
+# and WordPress's actual registered field names:
+#
+# 1. hero_image doesn't exist as an ACF field on ANY of the three page
+#    types — all three CPTs support "thumbnail" natively, so it's handled
+#    separately below as the WordPress native Featured Image
+#    (featured_media), never sent inside "acf" at all.
+#
+# 2. Simple renames — the field exists, same shape, just a different name.
+#
+# 3. No WordPress equivalent at all for this page type, OR a structural
+#    mismatch (e.g. we send a plain string, WordPress has a repeater) —
+#    dropped rather than sent, since sending garbage 400s the ENTIRE acf
+#    object. These need a real remapping decision, tracked separately;
+#    until then, dropping keeps publish working for everything else.
+_PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
+    "specialization": {
+        "certificate_image": "certificate_image_specialization",
+        "exam_content": "examination_content",
+    },
+}
+
+_PUBLISH_FIELD_DROP: dict[str, set[str]] = {
+    "university": {
+        "certificate_image",  # no matching field for university pages at all
+        "facts",              # WP's "facts_content" is wysiwyg, not a repeater
+    },
+    "course": {
+        "fee_plans",           # WP has flat per-tier fields, not a repeater
+        "eligibility_content",  # WP's is a repeater, we send a plain string
+    },
+    "specialization": {
+        "highlights",           # WP's "highlights_content" is wysiwyg, not a repeater
+        "eligibility_content",  # WP's is a repeater, we send a plain string
+    },
+}
+
+# WordPress field type is "number" (not "text") for these — a string like
+# "3+" fails validation; strip to a bare int or drop if unparseable.
+_PUBLISH_NUMERIC_FIELDS: dict[str, set[str]] = {
+    "course": {"num_specializations"},
+}
+
+
 def publish_payload(
     payload: dict[str, Any],
     page_type: str,
@@ -226,10 +272,32 @@ def publish_payload(
             page_type, dropped,
         )
 
-    # Convert IMAGE-type fields from a Cloudinary URL to a WordPress
-    # attachment ID — a native ACF "Image" field rejects anything else.
-    # Images are optional: a field with no uploaded image is left as null,
-    # no download/upload attempted for it.
+    # hero_image has no ACF field on any page type — it's handled as the
+    # native WordPress Featured Image instead (see below), never sent
+    # inside "acf" at all.
+    hero_image_url = acf_fields.pop("hero_image", None)
+
+    # Drop fields with no real WordPress equivalent for this page type —
+    # BEFORE image conversion below, so we never waste a download/upload
+    # attempt (or error out) converting an image for a field that's about
+    # to be discarded anyway.
+    drop_keys = _PUBLISH_FIELD_DROP.get(page_type, set())
+    still_dropped = [k for k in drop_keys if k in acf_fields]
+    for k in still_dropped:
+        del acf_fields[k]
+    if still_dropped:
+        logger.warning(
+            "PUBLISH_DROPPED_UNMAPPED_FIELDS: page_type=%s keys=%s "
+            "(no WordPress field for this page type, or a structural "
+            "mismatch not yet reconciled)",
+            page_type, still_dropped,
+        )
+
+    # Convert remaining IMAGE-type fields from a Cloudinary URL to a
+    # WordPress attachment ID — a native ACF "Image" field rejects anything
+    # else. Images are optional: a field with no uploaded image is left as
+    # null, no download/upload attempted for it. Done BEFORE the rename
+    # step below, since that operates on our internal key names.
     for key in list(acf_fields.keys()):
         if get_field_type(key, page_type) != IMAGE:
             continue
@@ -244,6 +312,30 @@ def publish_payload(
                 f"Failed to attach '{key}' image to WordPress (source: {url_value}): {exc}"
             ) from exc
 
+    # Rename to WordPress's actual field name where it's just a naming
+    # difference (same shape/type on both sides).
+    for our_key, wp_key in _PUBLISH_FIELD_RENAMES.get(page_type, {}).items():
+        if our_key in acf_fields:
+            acf_fields[wp_key] = acf_fields.pop(our_key)
+
+    # WordPress declares these as a "number" field — coerce "3+" -> 3,
+    # drop if it doesn't parse.
+    for key in _PUBLISH_NUMERIC_FIELDS.get(page_type, set()):
+        if key in acf_fields and acf_fields[key] is not None:
+            m = re.search(r"\d+", str(acf_fields[key]))
+            acf_fields[key] = int(m.group(0)) if m else None
+
+    # Side-load the hero image (if one was uploaded) into WordPress and
+    # attach it as the post's native Featured Image, not an acf field.
+    featured_media_id: int | None = None
+    if hero_image_url:
+        try:
+            featured_media_id = _upload_media_from_url(hero_image_url, f"{page_type}_hero_image")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to attach hero image to WordPress (source: {hero_image_url}): {exc}"
+            ) from exc
+
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
     base_url = f"{_site_url()}/wp-json/wp/v2/{post_type}"
 
@@ -252,7 +344,9 @@ def publish_payload(
         # in one request reliably persists the acf data — confirmed
         # directly against this site (a test write to an existing post
         # round-tripped correctly).
-        body = {"title": post_title, "status": status, "acf": acf_fields}
+        body: dict[str, Any] = {"title": post_title, "status": status, "acf": acf_fields}
+        if featured_media_id is not None:
+            body["featured_media"] = featured_media_id
         with httpx.Client(timeout=_TIMEOUT) as client:
             resp = client.post(f"{base_url}/{post_id}", json=body, auth=_auth())
         _raise_for_wp_error(resp)
@@ -265,10 +359,11 @@ def publish_payload(
         # posts. Splitting into create-then-update (which we've confirmed
         # DOES persist acf data) works around it with no WordPress-side
         # change needed.
+        create_body: dict[str, Any] = {"title": post_title, "status": status}
+        if featured_media_id is not None:
+            create_body["featured_media"] = featured_media_id
         with httpx.Client(timeout=_TIMEOUT) as client:
-            create_resp = client.post(
-                base_url, json={"title": post_title, "status": status}, auth=_auth()
-            )
+            create_resp = client.post(base_url, json=create_body, auth=_auth())
         _raise_for_wp_error(create_resp)
         new_id = create_resp.json().get("id")
 
