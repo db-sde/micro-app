@@ -186,9 +186,26 @@ def parse_kv_section(raw_text: str) -> list[dict[str, Any]]:
             if m:
                 value_text = m.group(0).strip()
 
+        # accreditations is a JSON_ARRAY (repeater) field, not plain text —
+        # a raw string here would 400 the whole publish once it reaches
+        # WordPress's ACF schema ("acf[accreditations][0] is not of type
+        # object"). A KV line like "Approval - NAAC A+, UGC, AICTE" is a
+        # comma-separated list of bodies, so split it into one repeater
+        # row per body rather than cramming it all into one string.
+        if matched_field == "accreditations":
+            value: Any = [
+                {"body_name": item.strip()}
+                for item in value_text.split(",")
+                if item.strip()
+            ]
+            if not value:
+                continue
+        else:
+            value = value_text
+
         results.append({
             "field_key":  matched_field,
-            "value":      value_text,
+            "value":      value,
             "confidence": 0.90,
             "source":     "kv_parser",
         })

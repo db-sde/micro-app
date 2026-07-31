@@ -232,6 +232,14 @@ def get_field_type(field_key: str, page_type: str) -> str:
             return f['type']
     return 'text'
 
+def get_first_sub_field_key(field_key: str, page_type: str) -> str | None:
+    """First sub-field key of a JSON_ARRAY (repeater) field, if any."""
+    for f in ACF_FIELDS.get(page_type, []):
+        if f['key'] == field_key:
+            sub_fields = f.get('sub_fields') or []
+            return sub_fields[0]['key'] if sub_fields else None
+    return None
+
 # Field types that are never populated by docx text extraction/embedding —
 # they're filled by dedicated flows instead (image upload, manual WP relation picking).
 NON_EXTRACTABLE_TYPES = {IMAGE, RELATION}

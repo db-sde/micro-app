@@ -45,7 +45,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from acf.fields import get_valid_field_keys, get_field_type, IMAGE
+from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, JSON_ARRAY
 
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
@@ -390,6 +390,24 @@ def publish_payload(
             "(not part of this page type's ACF schema)",
             page_type, dropped,
         )
+
+    # Defensive repair: a JSON_ARRAY (repeater) field should always be a
+    # list of objects, but older uploads can have a plain string here —
+    # e.g. the KV fast-path used to write "accreditations" as one flat
+    # string ("NAAC A+, UGC, AICTE") before that was fixed at the source.
+    # WordPress's ACF schema rejects a string where a repeater is expected
+    # ("acf[accreditations][0] is not of type object"), 400ing the whole
+    # publish — wrap it into a single-row repeater instead of failing.
+    for key, value in list(acf_fields.items()):
+        if get_field_type(key, page_type) != JSON_ARRAY:
+            continue
+        if isinstance(value, str) and value.strip():
+            sub_key = get_first_sub_field_key(key, page_type) or "value"
+            acf_fields[key] = [{sub_key: value.strip()}]
+            logger.warning(
+                "PUBLISH_COERCED_STRING_TO_REPEATER: page_type=%s field=%s",
+                page_type, key,
+            )
 
     # hero_image has no ACF field on any page type — it's handled as the
     # native WordPress Featured Image instead (see below), never sent
