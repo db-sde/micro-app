@@ -189,6 +189,33 @@ _FEE_TIER_FIELD_MAP: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 
+def _fix_faculty_members(rows: Any) -> Any:
+    """WordPress's faculty_members repeater (university) only has
+    member_name/member_program/member_designation — no separate
+    member_qualification sub-field (its own label is "Designation &
+    Qualification", i.e. one combined field). Sending the extra
+    member_qualification key 400s the whole repeater the same way
+    eligibility_content did with a mismatched sub-field, so merge it into
+    member_designation here rather than lose the data.
+    """
+    if not isinstance(rows, list):
+        return rows
+    fixed = []
+    for row in rows:
+        if not isinstance(row, dict):
+            fixed.append(row)
+            continue
+        row = dict(row)
+        qualification = row.pop("member_qualification", None)
+        if qualification:
+            designation = row.get("member_designation")
+            row["member_designation"] = (
+                f"{designation}, {qualification}" if designation else qualification
+            )
+        fixed.append(row)
+    return fixed
+
+
 def _remap_fee_plans(fee_plans: Any, page_type: str) -> dict[str, str]:
     """Best-effort map our fee_plans repeater onto WordPress's fixed,
     individually-named fee-tier fields. Matches by keyword in plan_name;
@@ -424,6 +451,9 @@ def publish_payload(
     if "fee_plans" in acf_fields:
         fee_plans = acf_fields.pop("fee_plans")
         acf_fields.update(_remap_fee_plans(fee_plans, page_type))
+
+    if page_type == "university" and "faculty_members" in acf_fields:
+        acf_fields["faculty_members"] = _fix_faculty_members(acf_fields["faculty_members"])
 
     # WordPress declares these as a "number" field — coerce "3+" -> 3,
     # drop if it doesn't parse.
