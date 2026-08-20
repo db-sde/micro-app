@@ -354,7 +354,10 @@ def publish_payload(
     Returns
     -------
     dict
-        ``{"id": int, "link": str, "edit_link": str, "status": str}``
+        ``{"id": int, "link": str, "edit_link": str, "status": str, "warnings": list[str]}``
+        — ``warnings`` lists any image field that failed to attach (network
+        hiccup downloading from Cloudinary or uploading to WordPress); the
+        rest of the post still published, that field is just null.
     """
     if not is_configured():
         raise RuntimeError(
@@ -435,6 +438,15 @@ def publish_payload(
     # else. Images are optional: a field with no uploaded image is left as
     # null, no download/upload attempted for it. Done BEFORE the rename
     # step below, since that operates on our internal key names.
+    #
+    # This is a network call (download from Cloudinary, upload to
+    # WordPress) — a transient hiccup here must not take down the rest of
+    # the publish. Previously any failure raised and aborted the whole
+    # request, so e.g. certificate_image flaking out would also take
+    # certificate_description and everything else with it, even though
+    # they have nothing to do with the failure. Log a warning and leave
+    # that one field null instead.
+    image_warnings: list[str] = []
     for key in list(acf_fields.keys()):
         if get_field_type(key, page_type) != IMAGE:
             continue
@@ -445,9 +457,12 @@ def publish_payload(
         try:
             acf_fields[key] = _upload_media_from_url(url_value, f"{page_type}_{key}")
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to attach '{key}' image to WordPress (source: {url_value}): {exc}"
-            ) from exc
+            logger.warning(
+                "PUBLISH_IMAGE_ATTACH_FAILED: page_type=%s field=%s source=%s error=%s",
+                page_type, key, url_value, exc,
+            )
+            acf_fields[key] = None
+            image_warnings.append(f"Could not attach '{key}': {exc}")
 
     # Rename to WordPress's actual field name where it's just a naming
     # difference (same shape/type on both sides).
@@ -487,9 +502,11 @@ def publish_payload(
         try:
             featured_media_id = _upload_media_from_url(hero_image_url, f"{page_type}_hero_image")
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to attach hero image to WordPress (source: {hero_image_url}): {exc}"
-            ) from exc
+            logger.warning(
+                "PUBLISH_IMAGE_ATTACH_FAILED: page_type=%s field=hero_image source=%s error=%s",
+                page_type, hero_image_url, exc,
+            )
+            image_warnings.append(f"Could not attach hero image: {exc}")
 
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
     base_url = f"{_site_url()}/wp-json/wp/v2/{post_type}"
@@ -535,9 +552,10 @@ def publish_payload(
         "link": data.get("link"),
         "edit_link": f"{site}/wp-admin/post.php?post={wp_id}&action=edit",
         "status": data.get("status", status),
+        "warnings": image_warnings,
     }
     logger.info(
-        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s",
-        page_type, post_type, wp_id, result["status"],
+        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s",
+        page_type, post_type, wp_id, result["status"], len(image_warnings),
     )
     return result

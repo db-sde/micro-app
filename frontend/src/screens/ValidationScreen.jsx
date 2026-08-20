@@ -647,6 +647,17 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
           }}>
             ✓ {result.wp_status === 'publish' ? 'Published live' : 'Saved as draft'} on WordPress (post #{result.wp_post_id})
           </div>
+          {result.wp_warnings?.length > 0 && (
+            <div style={{
+              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
+              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
+            }}>
+              ⚠ Published, but {result.wp_warnings.length === 1 ? 'an image' : 'some images'} didn't attach — likely a transient network hiccup, safe to retry:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {result.wp_warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <a href={result.wp_edit_link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ textAlign: 'center' }}>
               Open in WordPress Editor →

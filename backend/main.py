@@ -1036,6 +1036,7 @@ async def publish_to_wordpress(
         "wp_post_url": result["link"],
         "wp_edit_link": result["edit_link"],
         "wp_status": result["status"],
+        "wp_warnings": result.get("warnings", []),
     }
 
 
