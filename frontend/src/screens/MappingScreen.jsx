@@ -6,42 +6,6 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
-/* ACF fields per page type — must match backend schemas exactly */
-const ACF_FIELDS = {
-  university: [
-    'university_name', 'university_full_name', 'hero_description', 'established_year',
-    'cdoe_year', 'naac_grade', 'ugc_approved', 'mode_of_learning', 'starting_fee',
-    'num_programs', 'hero_image', 'about_heading', 'why_choose_heading', 'facts_heading',
-    'accreditations_heading', 'programs_heading', 'admission_heading', 'emi_heading',
-    'exam_heading', 'faculty_heading', 'placement_heading', 'reviews_heading', 'faqs_heading',
-    'about_content', 'why_choose_content', 'admission_steps', 'admission_fee_note',
-    'emi_content', 'exam_content', 'faculty_intro', 'placement_content', 'facts',
-    'accreditations', 'programs_table', 'faculty_members', 'reviews', 'faqs',
-    'seo_title', 'meta_description', 'programs_intro',
-  ],
-  course: [
-    'program_name', 'university_name', 'linked_university', 'hero_description', 'duration',
-    'mode', 'naac_grade', 'ugc_status', 'total_fee', 'num_specializations', 'hero_image',
-    'about_heading', 'highlights_heading', 'accreditations_heading', 'specializations_heading',
-    'fee_heading', 'eligibility_heading', 'admission_heading', 'syllabus_heading',
-    'placement_heading', 'jobs_heading', 'faqs_heading', 'about_content', 'specializations_intro',
-    'eligibility_content', 'admission_steps', 'admission_fee_note', 'syllabus_content',
-    'placement_content', 'certificate_description', 'validity', 'emi_amount', 'highlights',
-    'fee_plans', 'job_profiles', 'reviews', 'faqs', 'seo_title', 'meta_description',
-    'starting_fee', 'eligibility_summary',
-  ],
-  specialization: [
-    'spec_name', 'university_name', 'linked_university', 'linked_course',
-    'duration', 'mode', 'naac_grade', 'ugc_status', 'total_fee', 'about_heading',
-    'highlights_heading', 'eligibility_heading', 'fee_heading', 'other_specs_heading',
-    'syllabus_heading', 'exam_heading', 'admission_heading', 'placement_heading', 'jobs_heading',
-    'certificate_heading', 'faqs_heading', 'about_content', 'eligibility_content',
-    'syllabus_content', 'exam_content', 'admission_steps', 'admission_fee_note', 'placement_content',
-    'certificate_description', 'emi_amount', 'highlights', 'other_specs', 'job_profiles', 'reviews',
-    'faqs', 'seo_title', 'meta_description', 'eligibility_summary',
-  ],
-};
-
 export default function MappingScreen() {
   const { uploadId } = useParams();
   const navigate = useNavigate();
@@ -50,6 +14,10 @@ export default function MappingScreen() {
   const [loading, setLoading] = useState(!data);
   const [saving, setSaving] = useState(false);
   const [mappings, setMappings] = useState([]);
+  // Fetched from the backend (acf/fields.py is the source of truth) rather
+  // than hardcoded here, so this never drifts out of sync with the real
+  // schema again. Keyed by page_type; populated lazily as needed.
+  const [schemaByType, setSchemaByType] = useState({});
 
   useEffect(() => {
     if (data) {
@@ -59,7 +27,11 @@ export default function MappingScreen() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/download/${uploadId}`);
+        // /upload/{id}, not /download/{id} — the latter is just the bare
+        // payload file for download and has no field_mappings, which this
+        // screen needs. Only hit when navigated to directly (e.g. a
+        // refresh) without router state carrying the data already.
+        const res = await fetch(`${API_BASE}/upload/${uploadId}`);
         if (!res.ok) throw new Error('Failed to load data');
         const json = await res.json();
         setData(json);
@@ -72,6 +44,15 @@ export default function MappingScreen() {
     };
     fetchData();
   }, [uploadId]);
+
+  useEffect(() => {
+    const pt = data?.page_type;
+    if (!pt || schemaByType[pt]) return;
+    fetch(`${API_BASE}/schema/${pt}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed to load field schema'))))
+      .then((json) => setSchemaByType((prev) => ({ ...prev, [pt]: json.fields || [] })))
+      .catch((err) => showToast(err.message, 'error'));
+  }, [data?.page_type, schemaByType]);
 
   const initMappings = (d) => {
     // Build mappings from backend field_mappings array
@@ -86,7 +67,7 @@ export default function MappingScreen() {
   };
 
   const pageType = data?.page_type || 'university';
-  const acfOptions = ACF_FIELDS[pageType] || ACF_FIELDS.university;
+  const acfOptions = schemaByType[pageType] || [];
 
   const handleFieldChange = (index, newField) => {
     setMappings((prev) => {
@@ -133,6 +114,10 @@ export default function MappingScreen() {
     );
   }
 
+  // Images aren't correctable here — they're managed on the Images step,
+  // and their field type is excluded from the schema dropdown entirely.
+  const editableMappings = mappings.filter((m) => m.heading_in_doc !== '[image upload]');
+
   return (
     <div id="mapping-screen">
       <TopBar title="Fix Field Mappings" subtitle="Review and correct AI-suggested field mappings">
@@ -145,7 +130,7 @@ export default function MappingScreen() {
         <div className="card-header">
           <h3 className="card-header-title">Field Mapping Editor</h3>
           <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-            {mappings.length} headings mapped
+            {editableMappings.length} headings mapped
           </span>
         </div>
 
@@ -166,8 +151,11 @@ export default function MappingScreen() {
           </div>
         </div>
 
-        {/* Mapping Rows */}
+        {/* Mapping Rows — index stays aligned with the underlying `mappings`
+            state array (needed by handleFieldChange), image rows just
+            render nothing rather than being filtered out of the array. */}
         {mappings.map((m, idx) => {
+          if (m.heading_in_doc === '[image upload]') return null;
           const isLow = m.confidence < 0.72;
 
           return (
@@ -210,7 +198,7 @@ export default function MappingScreen() {
           );
         })}
 
-        {mappings.length === 0 && (
+        {editableMappings.length === 0 && (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-muted)' }}>
             No headings found in the document.
           </div>

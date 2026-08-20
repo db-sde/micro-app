@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
@@ -49,11 +49,24 @@ def _build_engine():
 
     # Fallback to SQLite
     logger.info("Using SQLite database: %s", _SQLITE_PATH)
-    return create_engine(
+    sqlite_engine = create_engine(
         _SQLITE_URL,
         connect_args={"check_same_thread": False},
         echo=False,
     )
+
+    # SQLite ignores ON DELETE CASCADE (used by FieldMapping -> Upload)
+    # unless foreign key enforcement is explicitly turned on per connection
+    # — without this, deleting an Upload silently orphans its FieldMapping
+    # rows instead of cascading, only on the SQLite dev fallback (Postgres
+    # enforces foreign keys natively, unaffected).
+    @event.listens_for(sqlite_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    return sqlite_engine
 
 
 engine = _build_engine()

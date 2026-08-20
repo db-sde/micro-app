@@ -48,7 +48,7 @@ from pipeline.service import run_extraction_pipeline
 from pipeline.blog_pipeline import generate_blog_summary
 from pipeline import wordpress_client
 from pipeline import cloudinary_client
-from acf.fields import get_image_field_keys
+from acf.fields import get_image_field_keys, get_field_type, get_valid_field_keys, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
 
 # ────────────────────────── logging ──────────────────────────
 
@@ -413,11 +413,18 @@ async def confirm_fields(
 ):
     """Confirm or correct field mappings for an upload.
 
-    Accepts a list of corrections, re-extracts changed fields, and re-validates.
+    A correction means "this heading should map to field_key instead of
+    whatever it was assigned to before" — the heading text itself doesn't
+    change. The heading's content was already extracted once (into the
+    ORIGINAL field's FieldMapping row); this carries that already-extracted
+    value over to the corrected field_key rather than just relabeling
+    metadata while leaving the actual JSON payload untouched.
     """
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found.")
+
+    page_type = upload.page_type or "university"
 
     # Load existing payload
     existing_payload: dict[str, Any] = {}
@@ -427,14 +434,43 @@ async def confirm_fields(
         except json.JSONDecodeError:
             existing_payload = {}
 
-    # Parse the original file to get section content
-    # We'll work with field mappings in the DB
-
     for correction in body.corrections:
         fk = correction.field_key
         heading = correction.heading_in_doc
 
-        # Find or create the field mapping
+        # Image/relation fields are never populated from document text —
+        # they're set via /upload-image or manually in WordPress. Skip
+        # writing a value for these, same guard as extract_field() itself.
+        target_type = get_field_type(fk, page_type)
+        skip_value = target_type in NON_EXTRACTABLE_TYPES
+
+        # The heading was already extracted once, under whichever field it
+        # was originally assigned to — find that row to recover the value.
+        source_fm = (
+            db.query(FieldMapping)
+            .filter(
+                FieldMapping.upload_id == upload_id,
+                FieldMapping.heading_in_doc == heading,
+            )
+            .first()
+        )
+
+        new_value: Any = None
+        stored_value: str | None = None
+        if source_fm and source_fm.value is not None and not skip_value:
+            stored_value = source_fm.value
+            if target_type == JSON_ARRAY:
+                try:
+                    new_value = json.loads(stored_value)
+                except json.JSONDecodeError:
+                    new_value = stored_value
+            else:
+                new_value = stored_value
+
+        if new_value is not None:
+            existing_payload[fk] = new_value
+
+        # Find or create the field mapping row for the (possibly new) field_key
         fm = (
             db.query(FieldMapping)
             .filter(
@@ -444,30 +480,31 @@ async def confirm_fields(
             .first()
         )
 
+        mapped_status = "mapped" if new_value is not None else "missing"
         if fm:
             fm.heading_in_doc = heading
+            fm.value = stored_value
             fm.source = "manual"
             fm.is_confirmed = True
             fm.confidence = 1.0
+            fm.status = mapped_status
         else:
             fm = FieldMapping(
                 upload_id=upload_id,
                 field_key=fk,
                 heading_in_doc=heading,
+                value=stored_value,
                 source="manual",
                 is_confirmed=True,
                 confidence=1.0,
-                status="mapped",
+                status=mapped_status,
             )
             db.add(fm)
 
-        # If the user provided a new heading, we need to re-extract
-        # For manual corrections, the value should be updated separately
-        # Mark as confirmed
-        fm.status = "mapped"
+    upload.payload = json.dumps(existing_payload, ensure_ascii=False)
 
     # Re-validate the payload
-    validation = validate_payload(existing_payload, upload.page_type or "university")
+    validation = validate_payload(existing_payload, page_type)
     upload.score = validation["summary"]["quality_score"]
     upload.status = "confirmed"
 
@@ -484,6 +521,7 @@ async def confirm_fields(
     return {
         "upload_id": upload.id,
         "status": upload.status,
+        "payload": existing_payload,
         "validation": validation,
         "field_mappings": [
             {
@@ -757,10 +795,28 @@ async def list_history(
 
 @app.delete("/history/{upload_id}")
 async def delete_upload(upload_id: int, db: Session = Depends(get_db)):
-    """Delete an upload and its associated field mappings (cascade)."""
+    """Delete an upload and its associated field mappings (cascade).
+
+    Best-effort deletes any Cloudinary images this upload created (they're
+    only ever a staging copy — WordPress gets its own separate copy via
+    side-load at publish time, so this never affects an already-published
+    post). Does NOT touch WordPress itself: if this upload was published,
+    that post stays live and untouched — deleting the local record here
+    only removes our own tracking of it.
+    """
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found.")
+
+    if upload.payload:
+        try:
+            payload_data = json.loads(upload.payload)
+        except json.JSONDecodeError:
+            payload_data = {}
+        for slot in ("hero_image", "certificate_image"):
+            url = payload_data.get(slot)
+            if isinstance(url, str):
+                cloudinary_client.delete_image_by_url(url)
 
     db.delete(upload)
     db.commit()
@@ -1064,6 +1120,29 @@ async def parse_only(file: UploadFile = File(...)):
         return section_map
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Parsing error: {exc}")
+
+
+# ────────────────────────── schema endpoint ──────────────────────────
+
+
+@app.get("/schema/{page_type}")
+async def get_schema(page_type: str):
+    """Field keys selectable for a page type in the Fix Mappings screen.
+
+    Single source of truth is acf/fields.py — this exists so the frontend
+    never has to hardcode/duplicate the schema (which drifts as fields get
+    added/renamed there). Excludes IMAGE/RELATION-type fields: those are
+    never populated from document text (set via /upload-image or manually
+    in WordPress), so they aren't valid correction targets here.
+    """
+    if page_type not in ("university", "course", "specialization"):
+        raise HTTPException(status_code=400, detail=f"Unknown page_type: {page_type!r}.")
+
+    fields = [
+        f["key"] for f in ACF_FIELDS.get(page_type, [])
+        if f["type"] not in NON_EXTRACTABLE_TYPES
+    ]
+    return {"page_type": page_type, "fields": fields}
 
 
 # ────────────────────────── health check ──────────────────────────

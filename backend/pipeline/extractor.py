@@ -306,12 +306,6 @@ def extract_field(
         return _extract_wysiwyg(field_key, text_block)
     elif field_type == "stat":
         return _extract_stat(field_key, text_block)
-    elif field_type == "table":
-        return _extract_table(field_key, text_block)
-    elif field_type == "bullet":
-        return _extract_bullet(field_key, text_block)
-    elif field_type == "faq":
-        return _extract_faq(field_key, text_block)
     elif field_type == "json":
         return _extract_json_array(field_key, text_block)
     else:
@@ -384,64 +378,6 @@ def _extract_stat(field_key: str, text_block: str) -> dict[str, Any]:
         result["value"] = None
 
     return result
-
-
-def _extract_table(field_key: str, text_block: str) -> dict[str, Any]:
-    """Extract tabular data as a JSON array of row objects."""
-    prompt = (
-        f"Convert the following table/tabular data to a JSON array for the "
-        f"ACF field '{field_key}'. Each row should be one JSON object. "
-        f"Normalise all keys to lowercase with underscores (e.g. "
-        f"'Course Name' → 'course_name'). Preserve all rows and data.\n\n"
-        f"Content:\n{text_block}\n\n"
-        f'Return ONLY: {{"value": [{{...}}, {{...}}]}}'
-    )
-    raw = call_claude(SYSTEM_PROMPT, prompt)
-    result = parse_json_response(raw)
-
-    # Validate that value is actually a list
-    val = result.get("value")
-    if val is not None and not isinstance(val, list):
-        # Try to parse it if it's a string
-        if isinstance(val, str):
-            try:
-                parsed = json.loads(val)
-                if isinstance(parsed, list):
-                    result["value"] = parsed
-                else:
-                    result["value"] = None
-                    result["structure_error"] = True
-            except json.JSONDecodeError:
-                result["value"] = None
-                result["structure_error"] = True
-
-    return result
-
-
-def _extract_bullet(field_key: str, text_block: str) -> dict[str, Any]:
-    """Extract bullet-point content as a JSON array of strings."""
-    prompt = (
-        f"Convert the following bullet points / list items to a JSON array "
-        f"of strings for the ACF field '{field_key}'. Preserve the complete "
-        f"text of each item. Remove bullet markers (•, -, numbers).\n\n"
-        f"Content:\n{text_block}\n\n"
-        f'Return ONLY: {{"value": ["item 1", "item 2", …]}}'
-    )
-    raw = call_claude(SYSTEM_PROMPT, prompt)
-    return parse_json_response(raw)
-
-
-def _extract_faq(field_key: str, text_block: str) -> dict[str, Any]:
-    """Extract FAQ content as a JSON array of {question, answer} objects."""
-    prompt = (
-        f"Convert the following Q&A / FAQ content to a JSON array of objects "
-        f"for the ACF field '{field_key}'. Each object must have 'question' "
-        f"and 'answer' keys. Preserve full text.\n\n"
-        f"Content:\n{text_block}\n\n"
-        f'Return ONLY: {{"value": [{{"question":"…","answer":"…"}}]}}'
-    )
-    raw = call_claude(SYSTEM_PROMPT, prompt)
-    return parse_json_response(raw)
 
 
 def _extract_json_array(field_key: str, text_block: str) -> dict[str, Any]:

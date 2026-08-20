@@ -126,7 +126,14 @@ export default function DynamicFormRenderer({ data, onChange }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {Object.entries(data).map(([key, value]) => renderField(key, value))}
+        {Object.entries(data)
+          // _meta is internal bookkeeping (page_type, wp_post_id for
+          // republish tracking, ...) — it's an object, not real ACF
+          // content, and rendering it as a plain text field would let a
+          // user overwrite it with a string, corrupting wp_post_id and
+          // breaking future republish/publish calls for this upload.
+          .filter(([key]) => key !== '_meta')
+          .map(([key, value]) => renderField(key, value))}
       </div>
     </div>
   );

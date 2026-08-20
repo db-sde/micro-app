@@ -217,6 +217,14 @@ export default function HistoryScreen() {
           <p style={{ fontSize: '0.875rem' }}>
             <strong>{deleteTarget?.filename}</strong> will be permanently removed. This action cannot be undone.
           </p>
+          {(deleteTarget?.status === 'published' || deleteTarget?.status === 'draft_published') && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
+              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
+            }}>
+              ⚠ This upload was already published to WordPress. Deleting it here only removes it from this app — the WordPress post itself stays live and untouched.
+            </div>
+          )}
         </div>
         <div className="modal-footer" style={{ padding: 0, borderTop: 'none' }}>
           <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)} id="btn-cancel-delete">

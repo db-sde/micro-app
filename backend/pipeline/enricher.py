@@ -835,43 +835,6 @@ def _derive_stats(
     Each derivation is based on a semantic relationship between fields,
     not on specific institution names or document structures.
     """
-    # established_year text → stat_years (badge)
-    if not payload.get("stat_years") and payload.get("established_year"):
-        year_raw = str(payload["established_year"]).strip()
-        m = re.search(r"\b(19|20)\d{2}\b", year_raw)
-        if m:
-            payload["stat_years"] = m.group(0)
-            enrichment_log.append({
-                "field_key": "stat_years",
-                "status":    "enriched",
-                "source":    "derive:established_year",
-            })
-            logger.info("DERIVED: stat_years = %r", payload["stat_years"])
-
-    # courses_table row count → stat_programs
-    if not payload.get("stat_programs"):
-        ct = payload.get("courses_table")
-        if isinstance(ct, list) and len(ct) > 0:
-            payload["stat_programs"] = f"{len(ct)}+"
-            enrichment_log.append({
-                "field_key": "stat_programs",
-                "status":    "enriched",
-                "source":    "derive:courses_table_count",
-            })
-            logger.info("DERIVED: stat_programs = %r", payload["stat_programs"])
-
-    # faculty_table row count → stat_faculty (if field exists on schema)
-    if not payload.get("stat_faculty"):
-        ft = payload.get("faculty_table")
-        if isinstance(ft, list) and len(ft) > 0:
-            payload["stat_faculty"] = f"{len(ft)}+"
-            enrichment_log.append({
-                "field_key": "stat_faculty",
-                "status":    "enriched",
-                "source":    "derive:faculty_table_count",
-            })
-            logger.info("DERIVED: stat_faculty = %r", payload["stat_faculty"])
-
     # accreditations text → naac_grade (extract NAAC A+/B++ etc.)
     # Also override a bare letter like 'A' with a more precise 'A++' if found
     _cur_naac = payload.get("naac_grade") or ""

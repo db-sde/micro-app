@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 import cloudinary
@@ -116,3 +117,17 @@ def delete_image(public_id: str) -> None:
         logger.info("CLOUDINARY_DELETED: public_id=%s", public_id)
     except Exception as exc:
         logger.warning("Cloudinary delete failed for %s: %s", public_id, exc)
+
+
+def delete_image_by_url(url: str) -> None:
+    """Delete a Cloudinary-hosted image given its delivery URL. Best-effort
+    — used when an upload is deleted, to avoid leaving orphaned assets in
+    the media library. Silently does nothing for a non-Cloudinary URL
+    (e.g. the local-disk fallback path)."""
+    if not url or "res.cloudinary.com" not in url:
+        return
+    # .../image/upload/v<version>/<public_id>.<ext>  ->  <public_id>
+    match = re.search(r"/upload/v\d+/(.+)\.[a-zA-Z0-9]+$", url)
+    if not match:
+        return
+    delete_image(match.group(1))
