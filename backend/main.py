@@ -48,7 +48,7 @@ from pipeline.service import run_extraction_pipeline
 from pipeline.blog_pipeline import generate_blog_summary
 from pipeline import wordpress_client
 from pipeline import cloudinary_client
-from acf.fields import get_image_field_keys, get_field_type, get_valid_field_keys, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
+from acf.fields import get_image_field_keys, get_file_field_keys, get_field_type, get_valid_field_keys, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
 
 # ────────────────────────── logging ──────────────────────────
 
@@ -81,6 +81,8 @@ UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 IMAGE_DIR = UPLOAD_DIR / "images"
 IMAGE_DIR.mkdir(exist_ok=True)
+FILES_DIR = UPLOAD_DIR / "files"
+FILES_DIR.mkdir(exist_ok=True)
 
 # Serve locally-stored images over HTTP — used as a fallback URL source
 # when WordPress media upload is not configured or fails.
@@ -817,6 +819,9 @@ async def delete_upload(upload_id: int, db: Session = Depends(get_db)):
             url = payload_data.get(slot)
             if isinstance(url, str):
                 cloudinary_client.delete_image_by_url(url)
+        brochure_url = payload_data.get("brochure")
+        if isinstance(brochure_url, str):
+            cloudinary_client.delete_pdf_by_url(brochure_url)
 
     db.delete(upload)
     db.commit()
@@ -1007,6 +1012,165 @@ async def upload_image(
         "url": image_url,
         "media_id": media_id,
         "source": image_source,
+        "warning": warning,
+        "payload": existing_payload,
+        "validation": validation,
+    }
+
+
+@app.post("/upload-brochure")
+async def upload_brochure(
+    file: UploadFile = File(...),
+    upload_id: int = Form(...),
+    slot_name: str = Form(default="brochure"),
+    db: Session = Depends(get_db),
+):
+    """Upload a PDF brochure for a given ACF file field ("slot") on an
+    upload. Same design as /upload-image, just for the FILE-type
+    ``brochure`` field instead of IMAGE-type ones: pushed to Cloudinary
+    (as a "raw" resource, not "image"), the resulting URL is written
+    directly into the ACF payload under ``slot_name``, and — like
+    images — this is entirely optional; a document can be validated and
+    published with no brochure attached at all.
+
+    Same loud-error-over-silent-fallback behavior as /upload-image: if
+    Cloudinary is configured but the upload fails, this raises a 502
+    rather than writing a URL only reachable from this backend's own
+    machine.
+    """
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided.")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format: {ext}. Only .pdf is supported.",
+        )
+
+    page_type = upload.page_type or "university"
+    valid_slots = get_file_field_keys(page_type)
+    if slot_name not in valid_slots:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid slot_name {slot_name!r} for page_type {page_type!r}. "
+                f"Must be one of: {', '.join(sorted(valid_slots))}"
+            ),
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    timestamp = int(time.time())
+    safe_name = f"{upload_id}_{slot_name}_{timestamp}{ext}"
+
+    file_url: str
+    media_id: str | None = None
+    file_source: str
+    warning: str | None = None
+
+    if cloudinary_client.is_configured():
+        try:
+            media = cloudinary_client.upload_pdf(content, safe_name)
+            file_url = media["url"]
+            media_id = media["public_id"]
+            file_source = "cloudinary"
+        except Exception as exc:
+            logger.error(
+                "Cloudinary PDF upload failed for upload %d slot %r: %s",
+                upload_id, slot_name, exc,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Cloudinary upload failed: {exc}. Check that CLOUDINARY_URL "
+                    f"(or CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/"
+                    f"CLOUDINARY_API_SECRET) is correct. Not falling back to local "
+                    f"storage, since that URL would not be reachable once published."
+                ),
+            )
+    else:
+        # Cloudinary isn't configured — pure local dev/testing path, same
+        # caveat as /upload-image's local fallback.
+        file_path = FILES_DIR / safe_name
+        file_path.write_bytes(content)
+        backend_base = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+        file_url = f"{backend_base}/uploads/files/{safe_name}"
+        file_source = "local"
+        warning = (
+            f"Cloudinary is not configured on this server — this file was stored "
+            f"locally at {file_url}, which is only reachable from wherever this "
+            f"backend is running. Set CLOUDINARY_URL to get a URL that works once "
+            f"published."
+        )
+
+    # Same concurrency-safe re-fetch as /upload-image — see the comment
+    # there for why this matters (stale in-memory payload otherwise
+    # clobbers whichever other slot's write landed in between).
+    upload = (
+        db.query(Upload)
+        .filter(Upload.id == upload_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+
+    existing_payload: dict[str, Any] = {}
+    if upload.payload:
+        try:
+            existing_payload = json.loads(upload.payload)
+        except json.JSONDecodeError:
+            existing_payload = {}
+
+    existing_payload[slot_name] = file_url
+    upload.payload = json.dumps(existing_payload, ensure_ascii=False)
+
+    fm = (
+        db.query(FieldMapping)
+        .filter(FieldMapping.upload_id == upload_id, FieldMapping.field_key == slot_name)
+        .first()
+    )
+    mapping_source = "CLOUDINARY" if file_source == "cloudinary" else "LOCAL_UPLOAD"
+    if fm:
+        fm.value = file_url
+        fm.heading_in_doc = "[brochure upload]"
+        fm.confidence = 1.0
+        fm.status = "mapped"
+        fm.source = mapping_source
+        fm.is_confirmed = True
+    else:
+        fm = FieldMapping(
+            upload_id=upload_id,
+            field_key=slot_name,
+            heading_in_doc="[brochure upload]",
+            value=file_url,
+            confidence=1.0,
+            status="mapped",
+            source=mapping_source,
+            is_confirmed=True,
+        )
+        db.add(fm)
+
+    validation = validate_payload(existing_payload, page_type)
+    upload.score = validation["summary"]["quality_score"]
+
+    db.commit()
+    db.refresh(upload)
+
+    return {
+        "upload_id": upload_id,
+        "slot_name": slot_name,
+        "url": file_url,
+        "media_id": media_id,
+        "source": file_source,
         "warning": warning,
         "payload": existing_payload,
         "validation": validation,

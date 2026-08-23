@@ -5,6 +5,7 @@ JSON_ARRAY = 'json'
 STAT       = 'stat'
 IMAGE      = 'image'
 RELATION   = 'relation'
+FILE       = 'file'
 
 ACF_FIELDS = {
 
@@ -22,6 +23,8 @@ ACF_FIELDS = {
         # Images — populated only via /upload-image, never via docx text extraction
         {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
         {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
+        # Brochure PDF — populated only via /upload-brochure, optional
+        {'key': 'brochure',           'type': FILE,     'embed': ''},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading section title'},
         {'key': 'why_choose_heading',     'type': TEXT, 'embed': 'why choose heading title pros benefits'},
@@ -78,6 +81,8 @@ ACF_FIELDS = {
         # Images — populated only via /upload-image, never via docx text extraction
         {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
         {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
+        # Brochure PDF — populated only via /upload-brochure, optional
+        {'key': 'brochure',           'type': FILE,     'embed': ''},
         # Headings
         {'key': 'about_heading',           'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',      'type': TEXT, 'embed': 'highlights heading program highlights title'},
@@ -135,6 +140,8 @@ ACF_FIELDS = {
         # Images — populated only via /upload-image, never via docx text extraction
         {'key': 'hero_image',         'type': IMAGE,    'embed': ''},
         {'key': 'certificate_image',  'type': IMAGE,    'embed': ''},
+        # Brochure PDF — populated only via /upload-brochure, optional
+        {'key': 'brochure',           'type': FILE,     'embed': ''},
         # Headings
         {'key': 'about_heading',          'type': TEXT, 'embed': 'about heading title'},
         {'key': 'highlights_heading',     'type': TEXT, 'embed': 'highlights heading title'},
@@ -241,9 +248,14 @@ def get_first_sub_field_key(field_key: str, page_type: str) -> str | None:
     return None
 
 # Field types that are never populated by docx text extraction/embedding —
-# they're filled by dedicated flows instead (image upload, manual WP relation picking).
-NON_EXTRACTABLE_TYPES = {IMAGE, RELATION}
+# they're filled by dedicated flows instead (image/file upload, manual WP
+# relation picking).
+NON_EXTRACTABLE_TYPES = {IMAGE, RELATION, FILE}
 
 def get_image_field_keys(page_type: str) -> set:
     """Return the set of IMAGE-type field keys valid for a given page type."""
     return {f['key'] for f in ACF_FIELDS.get(page_type, []) if f['type'] == IMAGE}
+
+def get_file_field_keys(page_type: str) -> set:
+    """Return the set of FILE-type field keys valid for a given page type."""
+    return {f['key'] for f in ACF_FIELDS.get(page_type, []) if f['type'] == FILE}

@@ -45,7 +45,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, JSON_ARRAY
+from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, FILE, JSON_ARRAY
 
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
@@ -299,9 +299,16 @@ def _upload_media_from_url(url: str, filename_hint: str) -> int:
 #    than sent, since sending an unrecognized key 400s the ENTIRE acf
 #    object.
 _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
+    "university": {
+        "brochure": "download_brochure_university",
+    },
+    "course": {
+        "brochure": "download_brochure_course",
+    },
     "specialization": {
         "certificate_image": "certificate_image_specialization",
         "exam_content": "examination_content",
+        "brochure": "download_brochure_specialization",
     },
 }
 
@@ -433,11 +440,12 @@ def publish_payload(
             page_type, still_dropped,
         )
 
-    # Convert remaining IMAGE-type fields from a Cloudinary URL to a
-    # WordPress attachment ID — a native ACF "Image" field rejects anything
-    # else. Images are optional: a field with no uploaded image is left as
-    # null, no download/upload attempted for it. Done BEFORE the rename
-    # step below, since that operates on our internal key names.
+    # Convert remaining IMAGE/FILE-type fields (e.g. certificate_image,
+    # brochure) from a Cloudinary URL to a WordPress attachment ID — a
+    # native ACF "Image"/"File" field rejects anything else. Both are
+    # optional: a field with nothing uploaded is left as null, no
+    # download/upload attempted for it. Done BEFORE the rename step below,
+    # since that operates on our internal key names.
     #
     # This is a network call (download from Cloudinary, upload to
     # WordPress) — a transient hiccup here must not take down the rest of
@@ -448,7 +456,7 @@ def publish_payload(
     # that one field null instead.
     image_warnings: list[str] = []
     for key in list(acf_fields.keys()):
-        if get_field_type(key, page_type) != IMAGE:
+        if get_field_type(key, page_type) not in (IMAGE, FILE):
             continue
         url_value = acf_fields[key]
         if not url_value:
@@ -458,7 +466,7 @@ def publish_payload(
             acf_fields[key] = _upload_media_from_url(url_value, f"{page_type}_{key}")
         except Exception as exc:
             logger.warning(
-                "PUBLISH_IMAGE_ATTACH_FAILED: page_type=%s field=%s source=%s error=%s",
+                "PUBLISH_MEDIA_ATTACH_FAILED: page_type=%s field=%s source=%s error=%s",
                 page_type, key, url_value, exc,
             )
             acf_fields[key] = None

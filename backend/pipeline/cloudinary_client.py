@@ -15,11 +15,19 @@ Auth: a single Cloudinary API environment variable. Configure via .env:
 Credentials" panel — the SDK auto-parses this env var format itself, no
 manual key/secret plumbing required.)
 
+Also handles the brochure PDF field (/upload-brochure): same idea, stored
+as Cloudinary's "raw" resource type instead of "image" since a PDF isn't
+image content.
+
 Public API
 ----------
 is_configured()                        -> bool
 upload_image(file_bytes, filename)     -> dict {url, public_id}
+upload_pdf(file_bytes, filename)       -> dict {url, public_id}
 delete_image(public_id)                -> None
+delete_pdf(public_id)                  -> None
+delete_image_by_url(url)               -> None
+delete_pdf_by_url(url)                 -> None
 """
 
 from __future__ import annotations
@@ -107,6 +115,45 @@ def upload_image(file_bytes: bytes, filename: str) -> dict[str, Any]:
     }
 
 
+def upload_pdf(file_bytes: bytes, filename: str) -> dict[str, Any]:
+    """Upload a PDF (e.g. a program brochure) to Cloudinary.
+
+    Same shape and behavior as upload_image(), stored as resource_type
+    "raw" since a PDF isn't image content — Cloudinary would otherwise try
+    to treat it as one.
+
+    Returns ``{"url": str, "public_id": str}``.
+    Raises RuntimeError if Cloudinary is not configured or the call fails.
+    """
+    if not is_configured():
+        raise RuntimeError(
+            "Cloudinary is not configured (CLOUDINARY_URL, or "
+            "CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / "
+            "CLOUDINARY_API_SECRET, missing)."
+        )
+    _ensure_configured()
+
+    public_id = os.path.splitext(filename)[0]
+
+    try:
+        result = cloudinary.uploader.upload(
+            file_bytes,
+            public_id=public_id,
+            folder="degreebaba",
+            overwrite=True,
+            resource_type="raw",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Cloudinary PDF upload failed: {exc}") from exc
+
+    url = result.get("secure_url") or result.get("url")
+    logger.info("CLOUDINARY_PDF_UPLOADED: public_id=%s url=%s", result.get("public_id"), url)
+    return {
+        "url": url,
+        "public_id": result.get("public_id"),
+    }
+
+
 def delete_image(public_id: str) -> None:
     """Delete an image from Cloudinary by its public_id. Best-effort."""
     if not is_configured():
@@ -117,6 +164,18 @@ def delete_image(public_id: str) -> None:
         logger.info("CLOUDINARY_DELETED: public_id=%s", public_id)
     except Exception as exc:
         logger.warning("Cloudinary delete failed for %s: %s", public_id, exc)
+
+
+def delete_pdf(public_id: str) -> None:
+    """Delete a raw (PDF) asset from Cloudinary by its public_id. Best-effort."""
+    if not is_configured():
+        return
+    _ensure_configured()
+    try:
+        cloudinary.uploader.destroy(public_id, resource_type="raw")
+        logger.info("CLOUDINARY_PDF_DELETED: public_id=%s", public_id)
+    except Exception as exc:
+        logger.warning("Cloudinary PDF delete failed for %s: %s", public_id, exc)
 
 
 def delete_image_by_url(url: str) -> None:
@@ -131,3 +190,14 @@ def delete_image_by_url(url: str) -> None:
     if not match:
         return
     delete_image(match.group(1))
+
+
+def delete_pdf_by_url(url: str) -> None:
+    """Delete a Cloudinary-hosted PDF given its delivery URL. Best-effort,
+    same as delete_image_by_url but for the "raw" resource type."""
+    if not url or "res.cloudinary.com" not in url:
+        return
+    match = re.search(r"/upload/v\d+/(.+)\.[a-zA-Z0-9]+$", url)
+    if not match:
+        return
+    delete_pdf(match.group(1))

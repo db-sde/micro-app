@@ -794,7 +794,7 @@ export default function ValidationScreen() {
         </Link>
       </TopBar>
 
-      <StepIndicator currentStep={3} />
+      <StepIndicator currentStep={4} />
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>

@@ -577,7 +577,8 @@ export function StepIndicator({ currentStep }) {
   const steps = [
     { num: 1, label: 'Upload' },
     { num: 2, label: 'Images' },
-    { num: 3, label: 'Validation' },
+    { num: 3, label: 'Brochure' },
+    { num: 4, label: 'Validation' },
   ];
 
   return (

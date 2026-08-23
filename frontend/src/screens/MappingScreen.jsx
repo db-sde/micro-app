@@ -114,9 +114,11 @@ export default function MappingScreen() {
     );
   }
 
-  // Images aren't correctable here — they're managed on the Images step,
-  // and their field type is excluded from the schema dropdown entirely.
-  const editableMappings = mappings.filter((m) => m.heading_in_doc !== '[image upload]');
+  // Images and brochures aren't correctable here — they're managed on their
+  // own upload steps, and their field types are excluded from the schema
+  // dropdown entirely.
+  const UPLOAD_MARKERS = ['[image upload]', '[brochure upload]'];
+  const editableMappings = mappings.filter((m) => !UPLOAD_MARKERS.includes(m.heading_in_doc));
 
   return (
     <div id="mapping-screen">
@@ -155,7 +157,7 @@ export default function MappingScreen() {
             state array (needed by handleFieldChange), image rows just
             render nothing rather than being filtered out of the array. */}
         {mappings.map((m, idx) => {
-          if (m.heading_in_doc === '[image upload]') return null;
+          if (UPLOAD_MARKERS.includes(m.heading_in_doc)) return null;
           const isLow = m.confidence < 0.72;
 
           return (
