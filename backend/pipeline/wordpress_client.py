@@ -334,6 +334,14 @@ _PUBLISH_NUMERIC_FIELDS: dict[str, set[str]] = {
     "course": {"num_specializations"},
 }
 
+# WordPress's course ACF group has a "program_duration" number field with no
+# internal equivalent of its own — we only extract the free-text "duration"
+# ("2 years"), which still goes to WP's separate "duration" text field
+# unchanged. Derive program_duration's numeric value from that same source.
+_PUBLISH_NUMERIC_DERIVE: dict[str, dict[str, str]] = {
+    "course": {"program_duration": "duration"},
+}
+
 
 def publish_payload(
     payload: dict[str, Any],
@@ -502,6 +510,15 @@ def publish_payload(
         if key in acf_fields and acf_fields[key] is not None:
             m = re.search(r"\d+", str(acf_fields[key]))
             acf_fields[key] = int(m.group(0)) if m else None
+
+    # Populate WordPress number fields that have no internal field of their
+    # own by extracting the leading digits from a related text field.
+    for wp_key, source_key in _PUBLISH_NUMERIC_DERIVE.get(page_type, {}).items():
+        source_val = acf_fields.get(source_key)
+        if source_val:
+            m = re.search(r"\d+", str(source_val))
+            if m:
+                acf_fields[wp_key] = int(m.group(0))
 
     # Side-load the hero image (if one was uploaded) into WordPress and
     # attach it as the post's native Featured Image, not an acf field.
