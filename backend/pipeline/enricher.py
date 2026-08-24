@@ -25,6 +25,11 @@ logger = logging.getLogger("degreebaba.enricher")
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
+# A NIRF mention's rank number can appear before OR after the word itself
+# ("Ranked #87 ... (NIRF)" vs "NIRF Rank: 45") — matches "#87", "rank 87",
+# "ranked #87", or a bare ordinal like "45th".
+_NIRF_NUM_RE = re.compile(r"#\s?\d+|rank(?:ed)?\s*#?\s?\d+|\b\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
+
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags and collapse whitespace."""
@@ -730,7 +735,7 @@ def _enrich_course_stats(
     current_naac = payload.get("naac_grade") or ""
     naac_is_coarse = bool(current_naac) and "+" not in str(current_naac)
     if not current_naac or naac_is_coarse:
-        for src_key in ("accreditations", "hero_description", "about_content", "highlights"):
+        for src_key in ("accreditations", "course_accreditations", "hero_description", "about_content", "highlights"):
             src_val = payload.get(src_key)
             if not src_val:
                 continue
@@ -744,7 +749,7 @@ def _enrich_course_stats(
 
     # ── ugc_status: from accreditations or hero ───────────────────
     if not payload.get("ugc_status"):
-        for src_key in ("accreditations", "hero_description", "about_content"):
+        for src_key in ("accreditations", "course_accreditations", "hero_description", "about_content"):
             src_val = payload.get(src_key)
             if not src_val:
                 continue
@@ -759,6 +764,55 @@ def _enrich_course_stats(
                 enrichment_log.append({"field_key": "ugc_status", "status": "enriched", "source": f"derive:{src_key}"})
                 logger.info("ENRICHED: ugc_status = %r (source=%s)", payload["ugc_status"], src_key)
                 break
+
+    # ── nirf_rank: from course_accreditations rows, or plain text fields ──
+    # A NIRF mention is usually one bullet buried inside a broader
+    # "Accreditations" list ("Ranked #87 ... (NIRF)"), not its own tagged
+    # heading, so it never gets its own dedicated extraction otherwise.
+    if not payload.get("nirf_rank"):
+        nirf_value: str | None = None
+        accreditations_rows = payload.get("course_accreditations")
+        if isinstance(accreditations_rows, list):
+            for row in accreditations_rows:
+                if not isinstance(row, dict):
+                    continue
+                # Scope the number search to just this row's own text, not
+                # the whole repeater — an adjacent row's unrelated number
+                # (e.g. NAAC's "Ranked top 10") must never leak in.
+                row_text = " ".join(str(v) for v in row.values() if v)
+                if not re.search(r"\bnirf\b", row_text, re.IGNORECASE):
+                    continue
+                m = _NIRF_NUM_RE.search(row_text)
+                if m:
+                    num = re.search(r"\d+", m.group(0))
+                    if num:
+                        nirf_value = "#" + num.group(0)
+                break
+
+        if not nirf_value:
+            for src_key in ("hero_description", "about_content", "highlights"):
+                src_val = payload.get(src_key)
+                if not src_val:
+                    continue
+                flat = _flatten_value(src_val)
+                m_nirf = re.search(r"nirf", flat, re.IGNORECASE)
+                if not m_nirf:
+                    continue
+                # A tight window around the mention, not the whole field —
+                # same reasoning as above, avoid picking up an unrelated
+                # number from elsewhere in a long paragraph.
+                window = flat[max(0, m_nirf.start() - 80): m_nirf.end() + 20]
+                m = _NIRF_NUM_RE.search(window)
+                if m:
+                    num = re.search(r"\d+", m.group(0))
+                    if num:
+                        nirf_value = "#" + num.group(0)
+                        break
+
+        if nirf_value:
+            payload["nirf_rank"] = nirf_value
+            enrichment_log.append({"field_key": "nirf_rank", "status": "enriched", "source": "derive:course_accreditations"})
+            logger.info("ENRICHED: nirf_rank = %r", nirf_value)
 
     # ── num_specializations: count from specializations_intro or fee_plans
     #    (course only — not a specialization-page field) ──────────────────

@@ -113,6 +113,14 @@ ACF_FIELDS = {
         # Repeaters
         {'key': 'highlights',           'type': JSON_ARRAY, 'embed': 'highlights program highlights features benefits USPs',
          'sub_fields': [{'key': 'highlight_title', 'type': TEXT}, {'key': 'highlight_description', 'type': TEXT}]},
+        # Matches WordPress's real field name/sub-field names exactly
+        # (course_body_name/descriptor/detail) — no publish-time rename
+        # needed. This is where bulleted accreditation content lives
+        # (e.g. "Ranked #87 ... (NIRF)"), which nirf_rank is derived from
+        # in enricher.py's _enrich_course_stats since it's rarely its own
+        # separate heading in the source doc.
+        {'key': 'course_accreditations', 'type': JSON_ARRAY, 'embed': 'course accreditations approvals certifications recognitions naac ugc aicte nirf rankings',
+         'sub_fields': [{'key': 'course_body_name', 'type': TEXT}, {'key': 'course_body_descriptor', 'type': TEXT}, {'key': 'course_body_detail', 'type': TEXT}]},
         {'key': 'fee_plans',            'type': JSON_ARRAY, 'embed': 'fee plans payment options semester annual one time total',
          'sub_fields': [{'key': 'plan_name', 'type': TEXT}, {'key': 'plan_amount', 'type': TEXT}, {'key': 'plan_total', 'type': TEXT}]},
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities positions average salary',

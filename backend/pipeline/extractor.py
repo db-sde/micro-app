@@ -76,6 +76,7 @@ No preamble. No explanation. No markdown fences. Raw JSON only.
 REPEATER STRUCTURES — For JSON array fields, use exactly these sub-field keys:
 facts:            [{"fact_title": "...", "fact_description": "..."}]
 accreditations:   [{"body_name": "NAAC", "body_descriptor": "A+ Grade", "body_detail": "Ranked top 10"}]
+course_accreditations: [{"course_body_name": "NAAC", "course_body_descriptor": "A+ Grade", "course_body_detail": "Ranked top 10"}]
 programs_table:   [{"program_name": "MBA", "program_fee": "₹45,000/-", "program_eligibility": "Bachelor's degree"}]
 faculty_members:  [{"member_name": "Dr. Name", "member_program": "MBA", "member_designation": "Professor", "member_qualification": "Ph.D."}]
 highlights:       [{"highlight_title": "Industry Mentors", "highlight_description": "Learn from CXOs"}]
