@@ -326,12 +326,25 @@ _PUBLISH_FIELD_DROP: dict[str, set[str]] = {
 }
 
 # Repeater -> wysiwyg HTML-list transforms: our_key -> (wp_key, title_subkey, desc_subkey).
+# Destructive — the source repeater key is REPLACED by the flat wp_key,
+# since on university/specialization the repeater has no real WordPress
+# field of its own to send it to anyway.
 _PUBLISH_HTML_LIST_TRANSFORMS: dict[str, dict[str, tuple[str, str, str]]] = {
     "university": {
         "facts": ("facts_content", "fact_title", "fact_description"),
     },
     "specialization": {
         "highlights": ("highlights_content", "highlight_title", "highlight_description"),
+    },
+}
+
+# Same idea, but non-destructive: on course, "highlights" IS also a real,
+# separate WordPress repeater in its own right (unlike above), so both
+# must be sent — the repeater as-is, plus a flattened HTML copy under a
+# second field name for the single-field display.
+_PUBLISH_HTML_LIST_COPY: dict[str, dict[str, tuple[str, str, str]]] = {
+    "course": {
+        "highlights": ("highlights_section_content", "highlight_title", "highlight_description"),
     },
 }
 
@@ -709,6 +722,15 @@ def publish_payload(
         if our_key not in acf_fields:
             continue
         html = _repeater_to_html_list(acf_fields.pop(our_key), title_key, desc_key)
+        if html:
+            acf_fields[wp_key] = html
+
+    # Same idea, but the source repeater is ALSO a real WordPress field in
+    # its own right — copy (don't pop), so both get sent.
+    for our_key, (wp_key, title_key, desc_key) in _PUBLISH_HTML_LIST_COPY.get(page_type, {}).items():
+        if our_key not in acf_fields:
+            continue
+        html = _repeater_to_html_list(acf_fields[our_key], title_key, desc_key)
         if html:
             acf_fields[wp_key] = html
 
