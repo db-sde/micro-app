@@ -481,6 +481,7 @@ def enrich_payload(
     _derive_stats(payload, enrichment_log)
     _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
     _derive_academic_years(payload, page_type, enrichment_log)
+    _backfill_accreditation_descriptors(payload, page_type, enrichment_log)
     _enrich_num_programs(payload, section_map, enrichment_log)
     _enrich_admission_fee_note(payload, section_map, enrichment_log)
 
@@ -668,6 +669,73 @@ def _enrich_admission_fee_note(
         flat = _flatten_section_content(section.get("content", ""))
         if flat and _search_text(flat, f"derive:section_scan:{heading}"):
             return
+
+
+# Well-known Indian higher-ed regulatory/accreditation bodies -> a clean
+# display name and a short descriptor. Used only to backfill
+# body_descriptor when it's missing — most often because the source doc
+# lists bodies as a bare comma-separated line ("Approvals: NAAC A+, UGC,
+# BCI, AIU, NCTE") with no per-body description to extract at all, which
+# renders as a bare badge with no sub-line on the WordPress side.
+_ACCREDITATION_BODY_INFO: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(r"^naac\b", re.IGNORECASE), "National Assessment and Accreditation Council", "Top-tier national accreditation"),
+    (re.compile(r"^ugc[-\s]?deb\b", re.IGNORECASE), "UGC Distance Education Bureau", "Approved for distance/online education"),
+    (re.compile(r"^ugc\b", re.IGNORECASE), "University Grants Commission", "Fully recognised degree program"),
+    (re.compile(r"^aicte\b", re.IGNORECASE), "All India Council for Technical Education", "Approved technical education body"),
+    (re.compile(r"^nirf\b", re.IGNORECASE), "National Institutional Ranking Framework", "Nationally ranked institution"),
+    (re.compile(r"^aiu\b", re.IGNORECASE), "Association of Indian Universities", "Member institution"),
+    (re.compile(r"^bci\b", re.IGNORECASE), "Bar Council of India", "Accredited"),
+    (re.compile(r"^ncte\b", re.IGNORECASE), "National Council for Teacher Education", "Accredited"),
+    (re.compile(r"^nba\b", re.IGNORECASE), "National Board of Accreditation", "Program-level accreditation"),
+    (re.compile(r"^pci\b", re.IGNORECASE), "Pharmacy Council of India", "Accredited"),
+    (re.compile(r"^(?:mci|nmc)\b", re.IGNORECASE), "National Medical Commission", "Accredited"),
+    (re.compile(r"^coa\b", re.IGNORECASE), "Council of Architecture", "Accredited"),
+    (re.compile(r"^wes\b", re.IGNORECASE), "World Education Services", "Internationally recognized"),
+    (re.compile(r"^ariia\b", re.IGNORECASE), "Atal Ranking of Institutions on Innovation Achievements", "Recognized for innovation"),
+]
+
+
+def _backfill_accreditation_descriptors(
+    payload: dict[str, Any],
+    page_type: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Fill in body_descriptor for accreditation rows that only have a bare
+    body_name — common when the source line is a compact comma-separated
+    list ("NAAC A+, UGC, BCI, AIU, NCTE") with nothing else to extract.
+    Never touches a row that already has real descriptor/detail text.
+    """
+    if page_type == "university":
+        field_key, name_key, descriptor_key, detail_key = "accreditations", "body_name", "body_descriptor", "body_detail"
+    elif page_type == "course":
+        field_key, name_key, descriptor_key, detail_key = "course_accreditations", "course_body_name", "course_body_descriptor", "course_body_detail"
+    else:
+        return
+
+    rows = payload.get(field_key)
+    if not isinstance(rows, list):
+        return
+
+    changed = False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get(descriptor_key) or row.get(detail_key):
+            continue
+        name = str(row.get(name_key) or "").strip()
+        if not name:
+            continue
+        for pattern, display_name, descriptor in _ACCREDITATION_BODY_INFO:
+            if pattern.match(name):
+                row[descriptor_key] = descriptor
+                row[detail_key] = display_name
+                changed = True
+                break
+
+    if changed:
+        enrichment_log.append({"field_key": field_key, "status": "enriched", "source": "derive:known_accreditation_bodies"})
+        logger.info("ENRICHED: %s descriptors backfilled from known-body lookup", field_key)
+
 
 def _enrich_course_stats(
     payload: dict[str, Any],
