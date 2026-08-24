@@ -28,6 +28,12 @@ into the WordPress media library at publish time, then sending the
 resulting attachment ID instead of the URL. Images are optional — a field
 with no uploaded image (null) is left as null, no conversion attempted.
 
+Taxonomies (program, mode, level, institution, discipline, approval_body)
+are assigned as top-level REST keys alongside "title"/"status" (native WP
+core taxonomy handling, not the ACF-on-create quirk above) — see
+_derive_taxonomies for how each is resolved from the payload, since none
+of them have a dedicated docx-extracted field of their own.
+
 Public API
 ----------
 is_configured()                                           -> bool
@@ -343,6 +349,216 @@ _PUBLISH_NUMERIC_DERIVE: dict[str, dict[str, str]] = {
 }
 
 
+# ── Taxonomies ──────────────────────────────────────────────────────────
+# Real WordPress taxonomies, assigned as top-level REST keys (native WP
+# core taxonomy assignment — not the "acf" key, and not subject to the
+# ACF-on-create quirk documented above `publish_payload`). "pillar" is
+# omitted below since this app never publishes pillar pages.
+#
+# Fixed-vocabulary taxonomies (program, mode, level, approval_body) only
+# ever match against their seeded terms and never auto-create a new one —
+# per the taxonomy plan, program's slugs ARE the URL clusters, curated
+# on purpose. Open taxonomies (discipline, institution) create a term on
+# first use, per the plan's "populate as built".
+_TAXONOMY_PAGE_TYPES: dict[str, set[str]] = {
+    "university": {"approval_body"},
+    "course": {"program", "mode", "level", "institution"},
+    "specialization": {"program", "mode", "level", "institution", "discipline"},
+}
+
+# taxonomy -> {keyword to look for (lowercase) -> seeded term slug}.
+# Ordered so longer/more-specific keywords are checked before the shorter
+# ones they contain (e.g. "executive mba" before "mba").
+#
+# NOTE on "program" slugs: the taxonomy plan describes "online-mba" style
+# slugs, but the live site's actual (and only, as of 2026-08) seeded term
+# is "MBA" / slug "mba" — plain, no "online-" prefix. Matching what's
+# actually registered on WordPress rather than the plan doc, per direct
+# confirmation. If the other 3 plan-listed program terms (MCA, Executive
+# MBA, MSc) get created later with a different slug convention, update here.
+_TAXONOMY_SEEDED_SLUGS: dict[str, dict[str, str]] = {
+    "program": {
+        "executive mba": "executive-mba",
+        "mba": "mba",
+        "mca": "mca",
+        "m.sc": "msc",
+        "msc": "msc",
+    },
+    "mode": {
+        "online": "online",
+        "distance": "distance",
+        "hybrid": "hybrid",
+    },
+    "level": {
+        "postgraduate": "postgraduate",
+        "undergraduate": "undergraduate",
+        "diploma": "diploma",
+        "certificate": "certificate",
+    },
+    "approval_body": {
+        "ugc-deb": "ugc-deb",
+        "ugc deb": "ugc-deb",
+        "ugc": "ugc",
+        "aicte": "aicte",
+        "naac": "naac",
+        "aiu": "aiu",
+        "wes": "wes",
+    },
+}
+
+# Signals an undergraduate program, overriding the "level" default below —
+# every program in this dataset is postgraduate today (per the taxonomy
+# plan's own note that "level" is "currently redundant while all PG"), so
+# defaulting to postgraduate is the safe fallback when nothing matches.
+_UG_KEYWORDS_RE = re.compile(
+    r"\b(?:bba|bca|b\.?\s*sc|bsc|b\.?\s*com|bcom|b\.?\s*tech|btech)\b",
+    re.IGNORECASE,
+)
+
+_term_id_cache: dict[tuple[str, str], int | None] = {}
+
+
+def _slugify(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+
+
+def _match_seeded_term(taxonomy: str, *texts: str) -> str | None:
+    """First seeded slug whose keyword appears in any of `texts`, else None."""
+    haystack = " ".join(t for t in texts if t).lower()
+    for keyword, slug in _TAXONOMY_SEEDED_SLUGS.get(taxonomy, {}).items():
+        if keyword in haystack:
+            return slug
+    return None
+
+
+def _get_or_create_term_id(
+    taxonomy: str, name: str, slug: str, create_if_missing: bool
+) -> int | None:
+    """Resolve a taxonomy term to its WordPress term ID by slug, optionally
+    creating it if missing (only for open, "populate as built" taxonomies).
+    Cached per (taxonomy, slug) for this process's lifetime."""
+    cache_key = (taxonomy, slug)
+    if cache_key in _term_id_cache:
+        return _term_id_cache[cache_key]
+
+    base_url = f"{_site_url()}/wp-json/wp/v2/{taxonomy}"
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        resp = client.get(base_url, params={"slug": slug}, auth=_auth())
+    if resp.status_code < 400:
+        results = resp.json()
+        if results:
+            term_id = results[0]["id"]
+            _term_id_cache[cache_key] = term_id
+            return term_id
+
+    if not create_if_missing:
+        logger.warning("TAXONOMY_TERM_NOT_FOUND: taxonomy=%s slug=%s", taxonomy, slug)
+        _term_id_cache[cache_key] = None
+        return None
+
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        create_resp = client.post(base_url, json={"name": name, "slug": slug}, auth=_auth())
+    if create_resp.status_code >= 400:
+        logger.warning(
+            "TAXONOMY_TERM_CREATE_FAILED: taxonomy=%s name=%s status=%s body=%s",
+            taxonomy, name, create_resp.status_code, create_resp.text[:300],
+        )
+        _term_id_cache[cache_key] = None
+        return None
+    term_id = create_resp.json().get("id")
+    logger.info("TAXONOMY_TERM_CREATED: taxonomy=%s name=%s slug=%s id=%s", taxonomy, name, slug, term_id)
+    _term_id_cache[cache_key] = term_id
+    return term_id
+
+
+def _derive_taxonomies(
+    payload: dict[str, Any], acf_fields: dict[str, Any], page_type: str
+) -> tuple[dict[str, list[int]], list[str]]:
+    """Resolve applicable taxonomy term IDs for this page from data already
+    in the payload. Returns (taxonomy -> [term_ids], warnings)."""
+    applicable = _TAXONOMY_PAGE_TYPES.get(page_type, set())
+    if not applicable:
+        return {}, []
+
+    result: dict[str, list[int]] = {}
+    warnings: list[str] = []
+    doc_title = str((payload.get("_meta") or {}).get("document_title", ""))
+    program_name = str(acf_fields.get("program_name") or "")
+    spec_name = str(acf_fields.get("spec_name") or "")
+    university_name = str(acf_fields.get("university_name") or "")
+    mode_value = str(acf_fields.get("mode") or "")
+
+    if "program" in applicable:
+        slug = _match_seeded_term("program", program_name, spec_name, doc_title)
+        if not slug:
+            warnings.append("Could not determine 'program' taxonomy term (no MBA/MCA/MSc keyword match)")
+        else:
+            term_id = _get_or_create_term_id("program", "", slug, False)
+            if term_id:
+                result["program"] = [term_id]
+            else:
+                warnings.append(
+                    f"Matched program '{slug}' but no such term exists on WordPress yet "
+                    "(only 'mba' is currently seeded) — add it under Programs, or update manually"
+                )
+
+    if "mode" in applicable:
+        # Nearly everything in this catalog is an online program — default
+        # to "online" rather than leaving the taxonomy unset when the
+        # "mode" ACF field doesn't literally spell out one of the 3 terms.
+        slug = _match_seeded_term("mode", mode_value) or "online"
+        term_id = _get_or_create_term_id("mode", "", slug, False)
+        if term_id:
+            result["mode"] = [term_id]
+
+    if "level" in applicable:
+        text = " ".join([program_name, spec_name, doc_title])
+        slug = "undergraduate" if _UG_KEYWORDS_RE.search(text) else "postgraduate"
+        term_id = _get_or_create_term_id("level", "", slug, False)
+        if term_id:
+            result["level"] = [term_id]
+
+    if "institution" in applicable and university_name.strip():
+        slug = _slugify(university_name)
+        term_id = _get_or_create_term_id("institution", university_name.strip(), slug, True)
+        if term_id:
+            result["institution"] = [term_id]
+
+    if "discipline" in applicable and spec_name.strip():
+        slug = _slugify(spec_name)
+        term_id = _get_or_create_term_id("discipline", spec_name.strip(), slug, True)
+        if term_id:
+            result["discipline"] = [term_id]
+
+    if "approval_body" in applicable:
+        accreditations = acf_fields.get("accreditations")
+        term_ids: list[int] = []
+        unresolved: list[str] = []
+        if isinstance(accreditations, list):
+            for row in accreditations:
+                if not isinstance(row, dict):
+                    continue
+                body_name = str(row.get("body_name") or "")
+                slug = _match_seeded_term("approval_body", body_name)
+                if not slug:
+                    continue
+                term_id = _get_or_create_term_id("approval_body", "", slug, False)
+                if term_id:
+                    if term_id not in term_ids:
+                        term_ids.append(term_id)
+                else:
+                    unresolved.append(slug)
+        if term_ids:
+            result["approval_body"] = term_ids
+        if unresolved:
+            warnings.append(
+                f"Matched approval_body term(s) {sorted(set(unresolved))} but the 'approval_body' "
+                "taxonomy doesn't exist on WordPress yet"
+            )
+
+    return result, warnings
+
+
 def publish_payload(
     payload: dict[str, Any],
     page_type: str,
@@ -520,6 +736,10 @@ def publish_payload(
             if m:
                 acf_fields[wp_key] = int(m.group(0))
 
+    # Resolve real WordPress taxonomy terms (program, mode, level,
+    # institution, discipline, approval_body) — see _derive_taxonomies.
+    taxonomy_terms, taxonomy_warnings = _derive_taxonomies(payload, acf_fields, page_type)
+
     # Side-load the hero image (if one was uploaded) into WordPress and
     # attach it as the post's native Featured Image, not an acf field.
     featured_media_id: int | None = None
@@ -544,6 +764,7 @@ def publish_payload(
         body: dict[str, Any] = {"title": post_title, "status": status, "acf": acf_fields}
         if featured_media_id is not None:
             body["featured_media"] = featured_media_id
+        body.update(taxonomy_terms)
         with httpx.Client(timeout=_TIMEOUT) as client:
             resp = client.post(f"{base_url}/{post_id}", json=body, auth=_auth())
         _raise_for_wp_error(resp)
@@ -559,6 +780,7 @@ def publish_payload(
         create_body: dict[str, Any] = {"title": post_title, "status": status}
         if featured_media_id is not None:
             create_body["featured_media"] = featured_media_id
+        create_body.update(taxonomy_terms)
         with httpx.Client(timeout=_TIMEOUT) as client:
             create_resp = client.post(base_url, json=create_body, auth=_auth())
         _raise_for_wp_error(create_resp)
@@ -578,9 +800,10 @@ def publish_payload(
         "edit_link": f"{site}/wp-admin/post.php?post={wp_id}&action=edit",
         "status": data.get("status", status),
         "warnings": image_warnings,
+        "taxonomy_warnings": taxonomy_warnings,
     }
     logger.info(
-        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s",
-        page_type, post_type, wp_id, result["status"], len(image_warnings),
+        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s taxonomies=%s",
+        page_type, post_type, wp_id, result["status"], len(image_warnings), taxonomy_terms,
     )
     return result

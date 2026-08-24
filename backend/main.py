@@ -1257,6 +1257,7 @@ async def publish_to_wordpress(
         "wp_edit_link": result["edit_link"],
         "wp_status": result["status"],
         "wp_warnings": result.get("warnings", []),
+        "wp_taxonomy_warnings": result.get("taxonomy_warnings", []),
     }
 
 
