@@ -30,6 +30,14 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 # "ranked #87", or a bare ordinal like "45th".
 _NIRF_NUM_RE = re.compile(r"#\s?\d+|rank(?:ed)?\s*#?\s?\d+|\b\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
 
+# Splits syllabus_content's own <h3>Year</h3> / <h4>Semester</h4> HTML
+# structure — used to derive a year -> semester repeater (see
+# _derive_academic_years). Claude's HTML output is constrained by
+# SYSTEM_PROMPT to only these tags, so a plain regex split is reliable
+# without needing an HTML parsing library.
+_H3_SPLIT_RE = re.compile(r"<h3[^>]*>(.*?)</h3>", re.IGNORECASE | re.DOTALL)
+_H4_SPLIT_RE = re.compile(r"<h4[^>]*>(.*?)</h4>", re.IGNORECASE | re.DOTALL)
+
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags and collapse whitespace."""
@@ -469,6 +477,7 @@ def enrich_payload(
     _fill_specializations_from_fees(payload, enrichment_log)
     _derive_stats(payload, enrichment_log)
     _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
+    _derive_academic_years(payload, page_type, enrichment_log)
     _enrich_num_programs(payload, section_map, enrichment_log)
     _enrich_admission_fee_note(payload, section_map, enrichment_log)
 
@@ -877,6 +886,72 @@ def _enrich_course_stats(
             if payload.get("eligibility_summary"):
                 enrichment_log.append({"field_key": "eligibility_summary", "status": "enriched", "source": "derive:eligibility_content"})
                 logger.info("ENRICHED: eligibility_summary = %r", payload["eligibility_summary"][:80])
+
+
+def _derive_academic_years(
+    payload: dict[str, Any],
+    page_type: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Split syllabus_content's own <h3>Year</h3><h4>Semester</h4> HTML into
+    a structured year -> semester repeater (course_academic_years /
+    academic_years), so the syllabus can be sorted and displayed by year
+    and semester on the WordPress side instead of only as one flat blob.
+
+    Best-effort and non-destructive: does nothing if syllabus_content has
+    no <h3> year markers to split on, or if the repeater already has a
+    value (e.g. a rare doc where it was extracted directly).
+    """
+    if page_type == "course":
+        years_key, sem_key = "course_academic_years", "course_semesters"
+        year_title_key, sem_title_key, sem_subjects_key = (
+            "course_year_title", "course_semester_title", "course_semester_subjects",
+        )
+    elif page_type == "specialization":
+        years_key, sem_key = "academic_years", "semesters"
+        year_title_key, sem_title_key, sem_subjects_key = (
+            "year_title", "semester_title", "semester_subjects",
+        )
+    else:
+        return
+
+    if payload.get(years_key):
+        return
+
+    html = payload.get("syllabus_content")
+    if not html or "<h3" not in html.lower():
+        return
+
+    # re.split with a capturing group alternates:
+    # [pre-text, year1_title, year1_body, year2_title, year2_body, ...]
+    parts = _H3_SPLIT_RE.split(html)
+    years: list[dict[str, Any]] = []
+    for i in range(1, len(parts), 2):
+        year_title = _strip_html(parts[i]).strip()
+        year_body = parts[i + 1] if i + 1 < len(parts) else ""
+        if not year_title:
+            continue
+
+        semesters: list[dict[str, str]] = []
+        sem_parts = _H4_SPLIT_RE.split(year_body)
+        if len(sem_parts) > 1:
+            for j in range(1, len(sem_parts), 2):
+                sem_title = _strip_html(sem_parts[j]).strip()
+                sem_body = (sem_parts[j + 1] if j + 1 < len(sem_parts) else "").strip()
+                if sem_title and sem_body:
+                    semesters.append({sem_title_key: sem_title, sem_subjects_key: sem_body})
+        elif year_body.strip():
+            # No <h4> semester markers under this year — keep the year's
+            # whole content as one "semester" rather than dropping it.
+            semesters.append({sem_title_key: year_title, sem_subjects_key: year_body.strip()})
+
+        if semesters:
+            years.append({year_title_key: year_title, sem_key: semesters})
+
+    if years:
+        payload[years_key] = years
+        enrichment_log.append({"field_key": years_key, "status": "enriched", "source": "derive:syllabus_content"})
+        logger.info("ENRICHED: %s = %d year(s) (source=syllabus_content)", years_key, len(years))
 
 
 def _derive_stats(

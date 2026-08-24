@@ -121,6 +121,14 @@ ACF_FIELDS = {
         # separate heading in the source doc.
         {'key': 'course_accreditations', 'type': JSON_ARRAY, 'embed': 'course accreditations approvals certifications recognitions naac ugc aicte nirf rankings',
          'sub_fields': [{'key': 'course_body_name', 'type': TEXT}, {'key': 'course_body_descriptor', 'type': TEXT}, {'key': 'course_body_detail', 'type': TEXT}]},
+        # Structured year -> semester breakdown of the syllabus, matching
+        # WordPress's real field/sub-field names exactly (no publish-time
+        # rename needed). Not extracted directly — derived deterministically
+        # in enricher.py from syllabus_content's own <h3>Year</h3><h4>Semester</h4>
+        # HTML structure, so it's always in sync with the flat text version.
+        {'key': 'course_academic_years', 'type': JSON_ARRAY, 'embed': 'academic years semester wise syllabus year wise curriculum breakdown',
+         'sub_fields': [{'key': 'course_year_title', 'type': TEXT}, {'key': 'course_semesters', 'type': JSON_ARRAY,
+          'sub_fields': [{'key': 'course_semester_title', 'type': TEXT}, {'key': 'course_semester_subjects', 'type': HTML}]}]},
         {'key': 'fee_plans',            'type': JSON_ARRAY, 'embed': 'fee plans payment options semester annual one time total',
          'sub_fields': [{'key': 'plan_name', 'type': TEXT}, {'key': 'plan_amount', 'type': TEXT}, {'key': 'plan_total', 'type': TEXT}]},
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities positions average salary',
@@ -183,6 +191,14 @@ ACF_FIELDS = {
         # Repeaters
         {'key': 'highlights',           'type': JSON_ARRAY, 'embed': 'highlights program features benefits USPs key points',
          'sub_fields': [{'key': 'highlight_title', 'type': TEXT}, {'key': 'highlight_description', 'type': TEXT}]},
+        # Structured year -> semester breakdown of the syllabus, matching
+        # WordPress's real field/sub-field names exactly. Derived
+        # deterministically in enricher.py from syllabus_content's own
+        # <h3>Year</h3><h4>Semester</h4> HTML structure — see course's
+        # course_academic_years for the same pattern.
+        {'key': 'academic_years', 'type': JSON_ARRAY, 'embed': 'academic years semester wise syllabus year wise curriculum breakdown',
+         'sub_fields': [{'key': 'year_title', 'type': TEXT}, {'key': 'semesters', 'type': JSON_ARRAY,
+          'sub_fields': [{'key': 'semester_title', 'type': TEXT}, {'key': 'semester_subjects', 'type': HTML}]}]},
         {'key': 'fee_plans',            'type': JSON_ARRAY, 'embed': 'fee plans payment options semester annual one time total',
          'sub_fields': [{'key': 'plan_name', 'type': TEXT}, {'key': 'plan_amount', 'type': TEXT}, {'key': 'plan_total', 'type': TEXT}]},
         {'key': 'other_specs',          'type': JSON_ARRAY, 'embed': 'other specializations explore related alternatives list',

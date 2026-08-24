@@ -32,16 +32,26 @@ export default function DynamicFormRenderer({ data, onChange }) {
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px', textTransform: 'capitalize' }}>
                           {subKey.replace(/_/g, ' ')}
                         </label>
-                        <input 
-                          type="text" 
-                          value={item[subKey] || ''} 
-                          onChange={(e) => {
-                            const newList = [...value];
-                            newList[index] = { ...newList[index], [subKey]: e.target.value };
-                            handleChange(key, newList);
-                          }}
-                          style={{ width: '100%', padding: '8px 10px', border: '1px solid #CBD5E1', borderRadius: '4px', fontSize: '13px' }}
-                        />
+                        {Array.isArray(item[subKey]) ? (
+                          // A nested repeater (e.g. course_academic_years'
+                          // course_semesters) — not editable here, an <input>
+                          // would stringify it and corrupt the structure on
+                          // the next edit. Show a read-only count instead.
+                          <div style={{ padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '4px', fontSize: '13px', color: '#94A3B8', fontStyle: 'italic', background: '#F8FAFC' }}>
+                            {item[subKey].length} nested item{item[subKey].length === 1 ? '' : 's'} — edit via JSON view
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={item[subKey] || ''}
+                            onChange={(e) => {
+                              const newList = [...value];
+                              newList[index] = { ...newList[index], [subKey]: e.target.value };
+                              handleChange(key, newList);
+                            }}
+                            style={{ width: '100%', padding: '8px 10px', border: '1px solid #CBD5E1', borderRadius: '4px', fontSize: '13px' }}
+                          />
+                        )}
                       </div>
                     ))
                   ) : (
