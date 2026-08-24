@@ -30,13 +30,16 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 # "ranked #87", or a bare ordinal like "45th".
 _NIRF_NUM_RE = re.compile(r"#\s?\d+|rank(?:ed)?\s*#?\s?\d+|\b\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
 
-# Splits syllabus_content's own <h3>Year</h3> / <h4>Semester</h4> HTML
-# structure — used to derive a year -> semester repeater (see
-# _derive_academic_years). Claude's HTML output is constrained by
-# SYSTEM_PROMPT to only these tags, so a plain regex split is reliable
-# without needing an HTML parsing library.
-_H3_SPLIT_RE = re.compile(r"<h3[^>]*>(.*?)</h3>", re.IGNORECASE | re.DOTALL)
-_H4_SPLIT_RE = re.compile(r"<h4[^>]*>(.*?)</h4>", re.IGNORECASE | re.DOTALL)
+# Splits syllabus_content's own Year/Semester HTML headings — used to
+# derive a year -> semester repeater (see _derive_academic_years). Claude
+# doesn't consistently put years in <h3> and semesters in <h4>; sometimes
+# both land in <h4> with no tag-level distinction at all. So this matches
+# <h3> AND <h4> headings together, in document order, and classification
+# into year vs semester is done by each heading's own text (below), not
+# by which tag it happened to use.
+_YEAR_SEM_HEADING_RE = re.compile(r"<h[34][^>]*>(.*?)</h[34]>", re.IGNORECASE | re.DOTALL)
+_YEAR_LABEL_RE = re.compile(r"^\s*year\b", re.IGNORECASE)
+_SEM_LABEL_RE = re.compile(r"^\s*sem(?:ester)?\b", re.IGNORECASE)
 
 
 def _strip_html(text: str) -> str:
@@ -893,14 +896,14 @@ def _derive_academic_years(
     page_type: str,
     enrichment_log: list[dict[str, str]],
 ) -> None:
-    """Split syllabus_content's own <h3>Year</h3><h4>Semester</h4> HTML into
-    a structured year -> semester repeater (course_academic_years /
+    """Split syllabus_content's own Year/Semester HTML headings into a
+    structured year -> semester repeater (course_academic_years /
     academic_years), so the syllabus can be sorted and displayed by year
     and semester on the WordPress side instead of only as one flat blob.
 
     Best-effort and non-destructive: does nothing if syllabus_content has
-    no <h3> year markers to split on, or if the repeater already has a
-    value (e.g. a rare doc where it was extracted directly).
+    no Year/Semester headings to split on, or if the repeater already has
+    a value (e.g. a rare doc where it was extracted directly).
     """
     if page_type == "course":
         years_key, sem_key = "course_academic_years", "course_semesters"
@@ -919,35 +922,43 @@ def _derive_academic_years(
         return
 
     html = payload.get("syllabus_content")
-    if not html or "<h3" not in html.lower():
+    if not html:
         return
 
     # re.split with a capturing group alternates:
-    # [pre-text, year1_title, year1_body, year2_title, year2_body, ...]
-    parts = _H3_SPLIT_RE.split(html)
+    # [pre-text, heading1_text, body1, heading2_text, body2, ...]
+    parts = _YEAR_SEM_HEADING_RE.split(html)
+    if len(parts) < 3:
+        return  # fewer than one full heading+body pair — nothing to split
+
     years: list[dict[str, Any]] = []
+    current_year: dict[str, Any] | None = None
+
     for i in range(1, len(parts), 2):
-        year_title = _strip_html(parts[i]).strip()
-        year_body = parts[i + 1] if i + 1 < len(parts) else ""
-        if not year_title:
+        heading_text = _strip_html(parts[i]).strip()
+        body = (parts[i + 1] if i + 1 < len(parts) else "").strip()
+        if not heading_text:
             continue
 
-        semesters: list[dict[str, str]] = []
-        sem_parts = _H4_SPLIT_RE.split(year_body)
-        if len(sem_parts) > 1:
-            for j in range(1, len(sem_parts), 2):
-                sem_title = _strip_html(sem_parts[j]).strip()
-                sem_body = (sem_parts[j + 1] if j + 1 < len(sem_parts) else "").strip()
-                if sem_title and sem_body:
-                    semesters.append({sem_title_key: sem_title, sem_subjects_key: sem_body})
-        elif year_body.strip():
-            # No <h4> semester markers under this year — keep the year's
-            # whole content as one "semester" rather than dropping it.
-            semesters.append({sem_title_key: year_title, sem_subjects_key: year_body.strip()})
+        if _YEAR_LABEL_RE.match(heading_text):
+            current_year = {year_title_key: heading_text, sem_key: []}
+            years.append(current_year)
+            if body:
+                # Content directly under a year heading with no semester
+                # sub-heading following it — keep it as one semester.
+                current_year[sem_key].append({sem_title_key: heading_text, sem_subjects_key: body})
+        elif _SEM_LABEL_RE.match(heading_text):
+            if current_year is None:
+                # A semester heading with no year heading before it (some
+                # docs skip year grouping entirely) — give it a home.
+                current_year = {year_title_key: "Year I", sem_key: []}
+                years.append(current_year)
+            if body:
+                current_year[sem_key].append({sem_title_key: heading_text, sem_subjects_key: body})
+        # Any other <h3>/<h4> in this block isn't a year/semester marker —
+        # ignore it rather than guess where it belongs.
 
-        if semesters:
-            years.append({year_title_key: year_title, sem_key: semesters})
-
+    years = [y for y in years if y[sem_key]]
     if years:
         payload[years_key] = years
         enrichment_log.append({"field_key": years_key, "status": "enriched", "source": "derive:syllabus_content"})
