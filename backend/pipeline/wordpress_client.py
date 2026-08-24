@@ -310,6 +310,7 @@ _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
     },
     "course": {
         "brochure": "download_brochure_course",
+        "nirf_rank": "nirf_rank_course",
     },
     "specialization": {
         "certificate_image": "certificate_image_specialization",
