@@ -94,6 +94,7 @@ STAT_QUESTIONS: dict[str, str] = {
     "established_year": "In what year was the university established?",
     "cdoe_year": "In what year was the CDOE/distance education department started?",
     "naac_grade": "What is the NAAC grade or score?",
+    "nirf_rank": "What is the NIRF rank or ranking number (just the number, e.g. from 'NIRF Rank 45' or 'Ranked #45')?",
     "starting_fee": "What is the starting fee or minimum fee?",
     "num_programs": "How many total programs or courses are offered?",
     "num_specializations": "How many specializations or tracks are available?",
@@ -375,6 +376,14 @@ def _extract_stat(field_key: str, text_block: str) -> dict[str, Any]:
         "na",
         "none",
     ):
+        result["value"] = None
+
+    # A NIRF rank is always a number — if extraction echoed back a label
+    # like "NIRF" instead of the actual rank (e.g. the value cell wasn't
+    # attached to this heading in the source doc), a digit-less result is
+    # wrong data, not a real answer. Missing is a better outcome than
+    # silently storing the field's own name as its value.
+    if field_key == "nirf_rank" and isinstance(result.get("value"), str) and not re.search(r"\d", result["value"]):
         result["value"] = None
 
     return result

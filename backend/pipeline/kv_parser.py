@@ -76,6 +76,9 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     (r"ugc", "ugc_approved"),
     # NAAC grade specifically
     (r"naac\s*(?:grade|rating|score)?|grade", "naac_grade"),
+    # NIRF ranking — previously unmatched by any pattern, so a "NIRF - 45"
+    # style line was silently dropped by this fast path entirely.
+    (r"nirf\s*(?:rank(?:ing)?)?", "nirf_rank"),
     # Approvals / accreditations (excluding UGC/NAAC which are caught above)
     (r"approval|aicte|recogni|accredit|certif", "accreditations"),
     # Establishment
@@ -122,6 +125,7 @@ _VALUE_EXTRACTORS: dict[str, re.Pattern[str]] = {
     "emi_amount":       re.compile(r"(?:INR|₹|Rs\.?)\s*[\d,]+", re.IGNORECASE),
     "num_programs":         re.compile(r"\d+\s*\+?"),
     "num_specializations":  re.compile(r"\d+\s*\+?"),
+    "nirf_rank":            re.compile(r"#?\d+(?:st|nd|rd|th)?", re.IGNORECASE),
 }
 
 
