@@ -79,8 +79,12 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
 
         # Heading-to-content pairing: if a lone _heading tag is used, we
         # also want to extract the content field that pairs with it.
-        _HEADING_TO_CONTENT: dict[str, str] = {
-            "accreditations_heading":  "accreditations",
+        # A value may be a tuple of candidates when the content field's
+        # name differs by page type (e.g. accreditations vs
+        # course_accreditations) — the first one valid for this page type
+        # wins.
+        _HEADING_TO_CONTENT: dict[str, str | tuple[str, ...]] = {
+            "accreditations_heading":  ("accreditations", "course_accreditations"),
             "highlights_heading":      "highlights",
             "specializations_heading": "specializations_intro",
             "fee_heading":             "fee_plans",
@@ -118,8 +122,12 @@ def classify_heading(heading: str, valid_acf_fields: set[str]) -> dict[str, Any]
                 # If it's a lone _heading tag, also add the content counterpart
                 # so the section body is extracted (not just the heading title).
                 content_pair = _HEADING_TO_CONTENT.get(tag)
-                if content_pair and content_pair in valid_acf_fields:
-                    chosen_tags.append(content_pair)
+                if content_pair:
+                    candidates = (content_pair,) if isinstance(content_pair, str) else content_pair
+                    for candidate in candidates:
+                        if candidate in valid_acf_fields:
+                            chosen_tags.append(candidate)
+                            break
 
         if chosen_tags:
             logger.info(
