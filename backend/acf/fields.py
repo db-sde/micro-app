@@ -130,6 +130,9 @@ ACF_FIELDS = {
         # Hero
         {'key': 'spec_name',          'type': TEXT,     'embed': 'specialization name title marketing finance hr operations'},
         {'key': 'university_name',    'type': TEXT,     'embed': 'university name institution brand'},
+        # AI-generated banner tagline — no docx section is tagged for this on
+        # specialization pages, so it's filled entirely by generate_seo_and_intro().
+        {'key': 'specialization_hero_description', 'type': TEXTAREA, 'embed': 'specialization hero description tagline short banner intro overview'},
         {'key': 'linked_university',  'type': RELATION, 'embed': 'linked university post id relationship'},
         {'key': 'linked_course',      'type': RELATION, 'embed': 'linked course post id relationship'},
         {'key': 'duration',           'type': STAT,     'embed': 'duration months years program length'},

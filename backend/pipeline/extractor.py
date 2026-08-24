@@ -432,10 +432,13 @@ def generate_seo_and_intro(payload: dict[str, Any], page_type: str) -> dict[str,
             "- programs_intro: One line subtitle to go above the programs table.\n"
         )
     elif page_type == "specialization":
-        target_fields = ["seo_title", "meta_description"]
+        target_fields = ["seo_title", "meta_description", "specialization_hero_description"]
         rules = (
             "- seo_title: 50-60 characters, include the specialization and university name.\n"
             "- meta_description: 140-160 characters, compelling search snippet for this specialization.\n"
+            "- specialization_hero_description: 2-3 sentences (max 300 characters), a compelling banner "
+            "tagline for this specialization page. Mention key highlights, career outcomes, or USPs. "
+            "No markdown, plain text only.\n"
         )
     else:  # course
         target_fields = ["seo_title", "meta_description", "hero_description"]
