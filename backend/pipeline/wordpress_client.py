@@ -196,13 +196,14 @@ _FEE_TIER_FIELD_MAP: dict[str, dict[str, tuple[str, str]]] = {
 
 
 def _fix_faculty_members(rows: Any) -> Any:
-    """WordPress's faculty_members repeater (university) only has
-    member_name/member_program/member_designation — no separate
-    member_qualification sub-field (its own label is "Designation &
-    Qualification", i.e. one combined field). Sending the extra
-    member_qualification key 400s the whole repeater the same way
-    eligibility_content did with a mismatched sub-field, so merge it into
-    member_designation here rather than lose the data.
+    """WordPress's faculty_members repeater (university) currently has
+    only member_name/member_designation — no separate member_program or
+    member_qualification sub-field (confirmed directly against the live
+    schema, which has visibly changed more than once already — it used
+    to also have member_program). Sending either extra key 400s the
+    whole repeater the same way eligibility_content did with a
+    mismatched sub-field, so merge both into member_designation here
+    rather than lose the data.
     """
     if not isinstance(rows, list):
         return rows
@@ -212,12 +213,11 @@ def _fix_faculty_members(rows: Any) -> Any:
             fixed.append(row)
             continue
         row = dict(row)
+        program = row.pop("member_program", None)
         qualification = row.pop("member_qualification", None)
-        if qualification:
-            designation = row.get("member_designation")
-            row["member_designation"] = (
-                f"{designation}, {qualification}" if designation else qualification
-            )
+        parts = [p for p in (row.get("member_designation"), program, qualification) if p]
+        if parts:
+            row["member_designation"] = ", ".join(parts)
         fixed.append(row)
     return fixed
 
