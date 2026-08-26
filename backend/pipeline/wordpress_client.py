@@ -360,16 +360,20 @@ _PUBLISH_HTML_LIST_COPY: dict[str, dict[str, tuple[str, str, str]]] = {
     },
 }
 
-# WordPress field type is "number" (not "text") for these — a string like
-# "3+" fails validation; strip to a bare int or drop if unparseable.
-_PUBLISH_NUMERIC_FIELDS: dict[str, set[str]] = {
-    "course": {"num_specializations"},
-}
-
-# WordPress's course ACF group has a "program_duration" number field with no
+# WordPress's course ACF group has a "program_duration" field with no
 # internal equivalent of its own — we only extract the free-text "duration"
 # ("2 years"), which still goes to WP's separate "duration" text field
-# unchanged. Derive program_duration's numeric value from that same source.
+# unchanged. Derive program_duration's value from that same source.
+#
+# NOTE: both this and num_specializations were briefly coerced to a real
+# Python int here, since WordPress's REST schema reported them as
+# "number" fields at the time. Confirmed directly against the live
+# schema (OPTIONS /wp-json/wp/v2/course) that both are now
+# ["string", "null"] — sending an int 400s the publish with "is not of
+# type string,null". Someone reconfigured these fields on the WordPress
+# side since (plausibly because MySQL postmeta doesn't preserve numeric
+# types either way, so there was never a real benefit). Send plain
+# strings, matching what's actually live now.
 _PUBLISH_NUMERIC_DERIVE: dict[str, dict[str, str]] = {
     "course": {"program_duration": "duration"},
 }
@@ -733,21 +737,15 @@ def publish_payload(
     if page_type == "university" and "faculty_members" in acf_fields:
         acf_fields["faculty_members"] = _fix_faculty_members(acf_fields["faculty_members"])
 
-    # WordPress declares these as a "number" field — coerce "3+" -> 3,
-    # drop if it doesn't parse.
-    for key in _PUBLISH_NUMERIC_FIELDS.get(page_type, set()):
-        if key in acf_fields and acf_fields[key] is not None:
-            m = re.search(r"\d+", str(acf_fields[key]))
-            acf_fields[key] = int(m.group(0)) if m else None
-
-    # Populate WordPress number fields that have no internal field of their
-    # own by extracting the leading digits from a related text field.
+    # Populate WordPress fields that have no internal field of their own by
+    # extracting the leading digits (as a string — see _PUBLISH_NUMERIC_DERIVE's
+    # note above) from a related text field.
     for wp_key, source_key in _PUBLISH_NUMERIC_DERIVE.get(page_type, {}).items():
         source_val = acf_fields.get(source_key)
         if source_val:
             m = re.search(r"\d+", str(source_val))
             if m:
-                acf_fields[wp_key] = int(m.group(0))
+                acf_fields[wp_key] = m.group(0)
 
     # Resolve real WordPress taxonomy terms (program, mode, level,
     # institution, discipline, approval_body) — see _derive_taxonomies.
