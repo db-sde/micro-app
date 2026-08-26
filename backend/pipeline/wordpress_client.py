@@ -381,35 +381,27 @@ _PUBLISH_NUMERIC_DERIVE: dict[str, dict[str, str]] = {
 # ACF-on-create quirk documented above `publish_payload`). "pillar" is
 # omitted below since this app never publishes pillar pages.
 #
-# Fixed-vocabulary taxonomies (program, mode, level, approval_body) only
-# ever match against their seeded terms and never auto-create a new one —
-# per the taxonomy plan, program's slugs ARE the URL clusters, curated
-# on purpose. Open taxonomies (discipline, institution) create a term on
-# first use, per the plan's "populate as built".
+# "program" is deliberately NOT auto-derived — course/specialization ACF
+# has its own "category_page" (post_object) field for this, set manually
+# in WordPress by the content team (confirmed directly), not guessed from
+# document text. Keyword-matching program_name against a fixed slug list
+# was the wrong mechanism entirely, not just an incomplete one — it
+# doesn't reflect how "program" is actually meant to be assigned here.
+#
+# Fixed-vocabulary taxonomies (mode, level, approval_body) only ever
+# match against their seeded terms and never auto-create a new one. Open
+# taxonomies (discipline, institution) create a term on first use, per
+# the plan's "populate as built".
 _TAXONOMY_PAGE_TYPES: dict[str, set[str]] = {
     "university": {"approval_body"},
-    "course": {"program", "mode", "level", "institution"},
-    "specialization": {"program", "mode", "level", "institution", "discipline"},
+    "course": {"mode", "level", "institution"},
+    "specialization": {"mode", "level", "institution", "discipline"},
 }
 
 # taxonomy -> {keyword to look for (lowercase) -> seeded term slug}.
 # Ordered so longer/more-specific keywords are checked before the shorter
-# ones they contain (e.g. "executive mba" before "mba").
-#
-# NOTE on "program" slugs: the taxonomy plan describes "online-mba" style
-# slugs, but the live site's actual (and only, as of 2026-08) seeded term
-# is "MBA" / slug "mba" — plain, no "online-" prefix. Matching what's
-# actually registered on WordPress rather than the plan doc, per direct
-# confirmation. If the other 3 plan-listed program terms (MCA, Executive
-# MBA, MSc) get created later with a different slug convention, update here.
+# ones they contain.
 _TAXONOMY_SEEDED_SLUGS: dict[str, dict[str, str]] = {
-    "program": {
-        "executive mba": "executive-mba",
-        "mba": "mba",
-        "mca": "mca",
-        "m.sc": "msc",
-        "msc": "msc",
-    },
     "mode": {
         "online": "online",
         "distance": "distance",
@@ -513,20 +505,6 @@ def _derive_taxonomies(
     spec_name = str(acf_fields.get("spec_name") or "")
     university_name = str(acf_fields.get("university_name") or "")
     mode_value = str(acf_fields.get("mode") or "")
-
-    if "program" in applicable:
-        slug = _match_seeded_term("program", program_name, spec_name, doc_title)
-        if not slug:
-            warnings.append("Could not determine 'program' taxonomy term (no MBA/MCA/MSc keyword match)")
-        else:
-            term_id = _get_or_create_term_id("program", "", slug, False)
-            if term_id:
-                result["program"] = [term_id]
-            else:
-                warnings.append(
-                    f"Matched program '{slug}' but no such term exists on WordPress yet "
-                    "(only 'mba' is currently seeded) — add it under Programs, or update manually"
-                )
 
     if "mode" in applicable:
         # Nearly everything in this catalog is an online program — default
