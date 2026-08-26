@@ -118,9 +118,19 @@ def upload_image(file_bytes: bytes, filename: str) -> dict[str, Any]:
 def upload_pdf(file_bytes: bytes, filename: str) -> dict[str, Any]:
     """Upload a PDF (e.g. a program brochure) to Cloudinary.
 
-    Same shape and behavior as upload_image(), stored as resource_type
-    "raw" since a PDF isn't image content — Cloudinary would otherwise try
-    to treat it as one.
+    Stored as resource_type "raw" since a PDF isn't image content —
+    Cloudinary would otherwise try to treat it as one.
+
+    Unlike upload_image(), the file extension is deliberately KEPT in the
+    public_id rather than stripped: for "image" resources Cloudinary
+    detects the format and appends the right extension to the delivery
+    URL itself, but "raw" resources get no such treatment — the delivery
+    URL is just the public_id, verbatim. Stripping ".pdf" here means the
+    URL never has one, so Cloudinary serves it as
+    "application/octet-stream" with no way to tell it's a PDF, and
+    re-uploading that into WordPress's media library then fails with
+    "Sorry, you are not allowed to upload this file type." (confirmed
+    live — WordPress rejects it outright).
 
     Returns ``{"url": str, "public_id": str}``.
     Raises RuntimeError if Cloudinary is not configured or the call fails.
@@ -133,7 +143,7 @@ def upload_pdf(file_bytes: bytes, filename: str) -> dict[str, Any]:
         )
     _ensure_configured()
 
-    public_id = os.path.splitext(filename)[0]
+    public_id = filename if filename.lower().endswith(".pdf") else f"{filename}.pdf"
 
     try:
         result = cloudinary.uploader.upload(
@@ -194,10 +204,14 @@ def delete_image_by_url(url: str) -> None:
 
 def delete_pdf_by_url(url: str) -> None:
     """Delete a Cloudinary-hosted PDF given its delivery URL. Best-effort,
-    same as delete_image_by_url but for the "raw" resource type."""
+    same idea as delete_image_by_url but for the "raw" resource type —
+    NOT the same regex, though: a "raw" resource's public_id includes its
+    extension literally (upload_pdf() keeps ".pdf" in it on purpose, see
+    there), so the delivery URL's trailing extension must NOT be stripped
+    here the way it is for images."""
     if not url or "res.cloudinary.com" not in url:
         return
-    match = re.search(r"/upload/v\d+/(.+)\.[a-zA-Z0-9]+$", url)
+    match = re.search(r"/upload/v\d+/(.+)$", url)
     if not match:
         return
     delete_pdf(match.group(1))
