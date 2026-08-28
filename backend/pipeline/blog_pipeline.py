@@ -1,4 +1,5 @@
 import logging
+import re
 from anthropic import Anthropic
 import os
 import json
@@ -113,11 +114,18 @@ def generate_blog_summary(text: str, page_type: str = "blog") -> str:
         except (json.JSONDecodeError, AttributeError):
             logger.warning("Failed to parse SEO JSON from: %s", seo_raw[:200])
 
+        # ── reading_time: deterministic from word count, not LLM-guessed —
+        # standard "average adult reading speed" estimate (~200 wpm),
+        # rounded up to the nearest minute with a 1-minute floor.
+        word_count = len(re.findall(r"\S+", text))
+        reading_time = f"{max(1, round(word_count / 200))} min read"
+
         # ── Combine and return all fields ──
         payload = {
             "complete_page_summary": summary_html,
             "seo_title": seo_title,
             "meta_description": meta_description,
+            "reading_time": reading_time,
         }
         return json.dumps(payload, indent=2)
     except Exception as exc:

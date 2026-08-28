@@ -221,6 +221,7 @@ ACF_FIELDS = {
         {'key': 'complete_page_summary', 'type': HTML, 'embed': 'complete page summary bullet points overview content highlights'},
         {'key': 'seo_title',             'type': TEXT, 'embed': 'seo title meta title page title search engine 50-60 chars'},
         {'key': 'meta_description',      'type': TEXTAREA, 'embed': 'meta description seo search snippet 140-160 chars'},
+        {'key': 'reading_time',          'type': TEXT, 'embed': 'reading time minutes estimated read duration'},
     ],
 
     'category': [

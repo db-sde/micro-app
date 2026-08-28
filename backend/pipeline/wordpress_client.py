@@ -76,14 +76,28 @@ def is_configured() -> bool:
     return bool(_site_url() and user and password)
 
 
+# university/course/specialization's CPT slug and REST base happen to be
+# identical, so page_type itself is a fine default for those. Not true for
+# blog/category: blog posts use WordPress's native "post" type, whose REST
+# base is the plural "posts" (not "post", and definitely not "blog"); the
+# category-landing-page CPT's REST base is "category-page", not "category"
+# (which would otherwise collide with WP's built-in category TAXONOMY at
+# /wp-json/wp/v2/categories — a different, unrelated endpoint).
+_DEFAULT_POST_TYPE_OVERRIDES: dict[str, str] = {
+    "blog": "posts",
+    "category": "category-page",
+}
+
+
 def get_post_type(page_type: str) -> str:
     """Resolve the WP custom-post-type slug for a given page_type.
 
-    Defaults to the page_type name itself; overridable per-type via env var
-    so a mismatched CPT slug can be fixed without a code change.
+    Defaults to the page_type name itself (or a hardcoded override for
+    blog/category, see above); overridable per-type via env var so a
+    mismatched CPT slug can be fixed without a code change.
     """
     env_key = f"WORDPRESS_POST_TYPE_{page_type.upper()}"
-    return os.getenv(env_key, "").strip() or page_type
+    return os.getenv(env_key, "").strip() or _DEFAULT_POST_TYPE_OVERRIDES.get(page_type, page_type)
 
 
 def _raise_for_wp_error(resp: httpx.Response) -> None:
@@ -128,7 +142,11 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
 
 
 def _build_title(payload: dict[str, Any], page_type: str, fallback: str) -> str:
-    for key in ("university_name", "program_name", "spec_name"):
+    # blog/category posts have none of university_name/program_name/spec_name
+    # — seo_title is the closest thing they have to a natural title, so
+    # it's checked last as a real (if imperfect) fallback before giving up
+    # and using the generic "Untitled ..." fallback string.
+    for key in ("university_name", "program_name", "spec_name", "seo_title"):
         val = payload.get(key)
         if val and isinstance(val, str):
             return val

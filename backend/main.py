@@ -46,6 +46,7 @@ from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.validator import validate_payload
 from pipeline.service import run_extraction_pipeline
 from pipeline.blog_pipeline import generate_blog_summary
+from pipeline.formatter import build_json_output
 from pipeline import wordpress_client
 from pipeline import cloudinary_client
 from acf.fields import get_image_field_keys, get_file_field_keys, get_field_type, get_valid_field_keys, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
@@ -322,8 +323,12 @@ async def upload_docx(
 async def upload_blog_docx(
     file: UploadFile = File(...),
     page_type: str = Form(default="blog"),
+    db: Session = Depends(get_db),
 ):
-    """Upload a .docx file for a blog/category page and get a 4-5 point summary."""
+    """Upload a .docx file for a blog/category page, generate its summary +
+    SEO fields, and persist it as an Upload record (same as university/
+    course/specialization) so it can be published via POST /publish/{upload_id}
+    like any other page type."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
 
@@ -331,6 +336,12 @@ async def upload_blog_docx(
         raise HTTPException(
             status_code=400,
             detail="Only .docx files are supported. Received: " + file.filename,
+        )
+
+    if page_type not in ("blog", "category"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid page_type: {page_type!r}. Must be blog or category.",
         )
 
     file_bytes = await file.read()
@@ -341,23 +352,40 @@ async def upload_blog_docx(
         # Extract raw text from the document
         parsed_data = parse_docx(file_bytes)
         raw_text = parsed_data.get("raw_text", "")
-        
+
         if not raw_text.strip():
             raise ValueError("No text could be extracted from the document.")
-            
+
         # Generate summary + SEO fields via Claude
         result_json = generate_blog_summary(raw_text, page_type)
-        
+
         # Parse the structured result
         try:
             result_data = json.loads(result_json)
         except json.JSONDecodeError:
-            result_data = {"complete_page_summary": result_json, "seo_title": "", "meta_description": ""}
-        
+            result_data = {"complete_page_summary": result_json, "seo_title": "", "meta_description": "", "reading_time": ""}
+
+        final_payload = build_json_output(
+            [{"field_key": k, "value": v} for k, v in result_data.items()],
+            file.filename,
+            page_type,
+        )
+
+        upload = Upload(
+            filename=file.filename,
+            page_type=page_type,
+            status="processed",
+            payload=json.dumps(final_payload, ensure_ascii=False),
+        )
+        db.add(upload)
+        db.commit()
+        db.refresh(upload)
+
         return {
+            "upload_id": upload.id,
             "filename": file.filename,
             "page_type": page_type,
-            "payload": result_data,
+            "payload": final_payload,
         }
     except Exception as exc:
         logger.error("Blog pipeline failed: %s\n%s", exc, traceback.format_exc())
@@ -1209,10 +1237,10 @@ async def publish_to_wordpress(
         raise HTTPException(status_code=500, detail="Stored payload is corrupted JSON.")
 
     page_type = upload.page_type or "university"
-    if page_type not in ("university", "course", "specialization"):
+    if page_type not in ("university", "course", "specialization", "blog", "category"):
         raise HTTPException(
             status_code=400,
-            detail=f"Publishing is only supported for university/course/specialization pages, got {page_type!r}.",
+            detail=f"Publishing is only supported for university/course/specialization/blog/category pages, got {page_type!r}.",
         )
 
     if not wordpress_client.is_configured():
