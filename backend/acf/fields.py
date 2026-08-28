@@ -188,6 +188,7 @@ ACF_FIELDS = {
         {'key': 'certificate_description','type': TEXTAREA,'embed': 'certificate description degree credential earn completion'},
         # Sidebar
         {'key': 'emi_amount',           'type': TEXT,     'embed': 'emi amount starting per month sidebar'},
+        {'key': 'program_validity',     'type': TEXT,     'embed': 'program validity years valid period certificate lifetime'},
         # Repeaters
         {'key': 'highlights',           'type': JSON_ARRAY, 'embed': 'highlights program features benefits USPs key points',
          'sub_fields': [{'key': 'highlight_title', 'type': TEXT}, {'key': 'highlight_description', 'type': TEXT}]},

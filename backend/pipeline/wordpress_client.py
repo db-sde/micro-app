@@ -734,6 +734,22 @@ def publish_payload(
         fee_plans = acf_fields.pop("fee_plans")
         acf_fields.update(_remap_fee_plans(fee_plans, page_type))
 
+        # WordPress (course + specialization) now ALSO has a real
+        # "fee_plans" repeater of its own, for filtering/dynamic display —
+        # added on the WP side after the fixed tier fields above already
+        # existed, so send both rather than replace one with the other.
+        # Its live schema only has plan_name/plan_amount (no plan_total,
+        # despite that being requested) — drop the extra key per row
+        # rather than 400 on an unrecognized sub-field.
+        if isinstance(fee_plans, list):
+            cleaned_fee_plans = [
+                {k: v for k, v in row.items() if k in ("plan_name", "plan_amount") and v}
+                for row in fee_plans if isinstance(row, dict)
+            ]
+            cleaned_fee_plans = [row for row in cleaned_fee_plans if row]
+            if cleaned_fee_plans:
+                acf_fields["fee_plans"] = cleaned_fee_plans
+
     if page_type == "university" and "faculty_members" in acf_fields:
         acf_fields["faculty_members"] = _fix_faculty_members(acf_fields["faculty_members"])
 
