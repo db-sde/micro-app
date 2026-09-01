@@ -89,8 +89,12 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
                                                               "mode_of_learning"),
     # Program name (must come BEFORE num_programs to avoid 'Program Name' falling through)
     (r"^program\s*name$",                                     "program_name"),
-    # Program count stat
-    (r"(?:total\s*|number\s*of\s*)?(?:programs?|courses?)(?:\s*(?:offered|available|count))?",
+    # Program count stat — the "total/number of" prefix or "offered/
+    # available/count" suffix is required, not optional: a fully-optional
+    # match here means ANY key containing the bare word "program"
+    # ("Program Validity", "Program Fee", "Program Duration", ...) gets
+    # swallowed into num_programs instead of its real field.
+    (r"(?:total\s*|number\s*of\s*)(?:programs?|courses?)|(?:programs?|courses?)\s*(?:offered|available|count)",
                                                               "num_programs"),
     # NAAC grade specifically (duplicate guard, keep for ordering safety)
     (r"naac\s*(?:grade|rating|score)|grade",                  "naac_grade"),

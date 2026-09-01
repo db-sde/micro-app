@@ -323,6 +323,8 @@ def run_extraction_pipeline(
         "specialization": {
             "ugc_approved":    "ugc_status",
             "mode_of_learning": "mode",
+            # kv_parser's "validity" pattern always writes to a field key
+            "validity":        "program_validity",
         },
     }
     if detected_type in _KV_REMAP:
