@@ -1,10 +1,129 @@
 import React, { useState, useEffect } from 'react';
 import {
   TopBar, DropZone, PageTypeSelector,
-  LoadingSpinner, showToast
+  LoadingSpinner, showToast, Modal, Toggle
 } from '../components/Components';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+/* ═══════════════════════════════════════
+   PUBLISH TO WORDPRESS MODAL (blog/category)
+   Same pattern as ValidationScreen's PublishModal, minus the
+   image/taxonomy warning blocks — blog and category pages have neither.
+   ═══════════════════════════════════════ */
+function BlogPublishModal({ isOpen, onClose, uploadId }) {
+  const [goLive, setGoLive] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [publishError, setPublishError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setResult(null);
+      setPublishError('');
+      setGoLive(false);
+    }
+  }, [isOpen]);
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    setPublishError('');
+    try {
+      const res = await fetch(`${API_BASE}/publish/${uploadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: goLive ? 'publish' : 'draft' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `Publish failed (${res.status})`);
+      setResult(body);
+      showToast(
+        goLive ? 'Published live on WordPress!' : 'Saved as a WordPress draft!',
+        'success'
+      );
+    } catch (err) {
+      setPublishError(err.message || 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Publish to WordPress">
+      {!result ? (
+        <>
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 16 }}>
+            This creates a new WordPress post populated with the Page Summary, SEO Title, Meta Description, and Reading Time from this upload.
+          </p>
+          <Toggle
+            checked={goLive}
+            onChange={setGoLive}
+            label={goLive ? 'Publish live (public immediately)' : 'Save as draft (recommended)'}
+            id="toggle-blog-publish-live"
+          />
+          {publishError && (
+            <div style={{
+              marginTop: 16, padding: '10px 14px', background: '#FEE2E2',
+              color: '#DC2626', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
+            }}>
+              ⚠ {publishError}
+            </div>
+          )}
+          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
+            <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-blog-publish">
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} id="btn-confirm-blog-publish">
+              {publishing ? (
+                <>
+                  <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  Publishing…
+                </>
+              ) : (
+                goLive ? 'Publish Live' : 'Save Draft to WordPress'
+              )}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{
+            padding: '12px 16px', background: '#ECFDF5', color: '#059669',
+            borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16,
+          }}>
+            ✓ {result.wp_status === 'publish' ? 'Published live' : 'Saved as draft'} on WordPress (post #{result.wp_post_id})
+          </div>
+          {result.wp_warnings?.length > 0 && (
+            <div style={{
+              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
+              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
+            }}>
+              ⚠ Published, but something didn't attach — likely a transient network hiccup, safe to retry:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {result.wp_warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <a href={result.wp_edit_link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ textAlign: 'center' }}>
+              Open in WordPress Editor →
+            </a>
+            {result.wp_post_url && (
+              <a href={result.wp_post_url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ textAlign: 'center' }}>
+                View Post →
+              </a>
+            )}
+          </div>
+          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
+            <button className="btn btn-secondary" onClick={onClose} id="btn-close-blog-publish-result">
+              Close
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
 
 export default function BlogSummarizerScreen() {
   const [file, setFile] = useState(null);
@@ -12,12 +131,13 @@ export default function BlogSummarizerScreen() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   
-  const [result, setResult] = useState(null); // { payload: {complete_page_summary, seo_title, meta_description}, filename: string }
+  const [result, setResult] = useState(null); // { upload_id, payload: {complete_page_summary, seo_title, meta_description, reading_time}, filename: string }
   const [editedJson, setEditedJson] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
   const [previewSeoTitle, setPreviewSeoTitle] = useState('');
   const [previewMetaDesc, setPreviewMetaDesc] = useState('');
   const [jsonError, setJsonError] = useState('');
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
   const handleFileDrop = (f) => {
     setError('');
@@ -137,8 +257,18 @@ export default function BlogSummarizerScreen() {
                   <button className="btn btn-secondary" onClick={handleReset} style={{ padding: '8px 20px' }}>
                     Start Over
                   </button>
-                  <button className="btn btn-primary" onClick={handleCopy} disabled={!!jsonError} style={{ padding: '8px 20px' }}>
+                  <button className="btn btn-secondary" onClick={handleCopy} disabled={!!jsonError} style={{ padding: '8px 20px' }}>
                     Copy JSON to Clipboard
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowPublishModal(true)}
+                    disabled={!result.upload_id}
+                    title={!result.upload_id ? 'This upload has no ID to publish' : undefined}
+                    style={{ padding: '8px 20px' }}
+                    id="btn-publish-blog"
+                  >
+                    🚀 Publish to WordPress
                   </button>
                 </div>
               </div>
@@ -339,6 +469,14 @@ export default function BlogSummarizerScreen() {
           </div>
         )}
       </div>
+
+      {result?.upload_id && (
+        <BlogPublishModal
+          isOpen={showPublishModal}
+          onClose={() => setShowPublishModal(false)}
+          uploadId={result.upload_id}
+        />
+      )}
     </div>
   );
 }
