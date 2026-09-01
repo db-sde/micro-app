@@ -138,6 +138,41 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
         )
 
 
+def _get_live_acf_field_types(post_type: str) -> dict[str, list[str]]:
+    """Fetch the live ACF field type declarations for a post type via
+    OPTIONS, keyed by field name -> JSON-schema type list (e.g.
+    ["number", "null"] or ["string", "null"]).
+
+    Used for fields whose WordPress type has been observed to flip back
+    and forth (see _VOLATILE_NUMERIC_FIELDS) — checking live at publish
+    time means a future flip doesn't need a code change to fix, unlike
+    hardcoding a guess that just breaks again next time someone toggles
+    the ACF field's type in the WordPress admin.
+
+    Best-effort: returns {} on any failure (network, unexpected response
+    shape, etc.) rather than raising — callers should treat a missing key
+    as "unknown, don't touch the value".
+    """
+    try:
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            resp = client.options(f"{_site_url()}/wp-json/wp/v2/{post_type}", auth=_auth())
+        if resp.status_code >= 400:
+            return {}
+        props = resp.json().get("schema", {}).get("properties", {}).get("acf", {}).get("properties", {})
+        if not isinstance(props, dict):
+            return {}
+        result = {}
+        for key, entry in props.items():
+            if not isinstance(entry, dict):
+                continue
+            t = entry.get("type")
+            result[key] = t if isinstance(t, list) else [t]
+        return result
+    except Exception as exc:
+        logger.warning("LIVE_SCHEMA_CHECK_FAILED: post_type=%s error=%s", post_type, exc)
+        return {}
+
+
 # ────────────────────────── post publishing ──────────────────────────
 
 
@@ -387,19 +422,21 @@ _PUBLISH_HTML_LIST_COPY: dict[str, dict[str, tuple[str, str, str]]] = {
 # WordPress's course ACF group has a "program_duration" field with no
 # internal equivalent of its own — we only extract the free-text "duration"
 # ("2 years"), which still goes to WP's separate "duration" text field
-# unchanged. Derive program_duration's value from that same source.
-#
-# NOTE: both this and num_specializations were briefly coerced to a real
-# Python int here, since WordPress's REST schema reported them as
-# "number" fields at the time. Confirmed directly against the live
-# schema (OPTIONS /wp-json/wp/v2/course) that both are now
-# ["string", "null"] — sending an int 400s the publish with "is not of
-# type string,null". Someone reconfigured these fields on the WordPress
-# side since (plausibly because MySQL postmeta doesn't preserve numeric
-# types either way, so there was never a real benefit). Send plain
-# strings, matching what's actually live now.
+# unchanged. Derive program_duration's value from that same source (the
+# resulting type — string vs int — is handled adaptively at publish time,
+# see _VOLATILE_NUMERIC_FIELDS below, since this field's declared WP type
+# keeps changing).
 _PUBLISH_NUMERIC_DERIVE: dict[str, dict[str, str]] = {
     "course": {"program_duration": "duration"},
+}
+
+# Both of these have flipped between WordPress "number" and "text" field
+# types multiple times already (confirmed live, same day: string -> number
+# -> string -> number) — rather than hardcode a guess that breaks again
+# next time someone toggles it in the ACF admin, their actual outgoing
+# type is checked live at publish time (see _get_live_acf_field_types).
+_VOLATILE_NUMERIC_FIELDS: dict[str, set[str]] = {
+    "course": {"num_specializations", "program_duration"},
 }
 
 
@@ -778,14 +815,35 @@ def publish_payload(
         acf_fields["faculty_members"] = _fix_faculty_members(acf_fields["faculty_members"])
 
     # Populate WordPress fields that have no internal field of their own by
-    # extracting the leading digits (as a string — see _PUBLISH_NUMERIC_DERIVE's
-    # note above) from a related text field.
+    # extracting the leading digits from a related text field. Left as a
+    # plain string here — the type-appropriate coercion happens in the
+    # volatile-numeric-fields check right below, which covers this field
+    # too.
     for wp_key, source_key in _PUBLISH_NUMERIC_DERIVE.get(page_type, {}).items():
         source_val = acf_fields.get(source_key)
         if source_val:
             m = re.search(r"\d+", str(source_val))
             if m:
                 acf_fields[wp_key] = m.group(0)
+
+    # num_specializations and program_duration have flipped between
+    # WordPress "number" and "text" field types multiple times on this
+    # site already (confirmed: 3 flips in one day) — rather than hardcode
+    # a guess that breaks again the next time someone toggles it in the
+    # ACF admin, check the live type at publish time and send whichever
+    # shape it currently wants.
+    volatile_keys = _VOLATILE_NUMERIC_FIELDS.get(page_type, set()) & acf_fields.keys()
+    if volatile_keys:
+        live_types = _get_live_acf_field_types(post_type)
+        for key in volatile_keys:
+            if acf_fields.get(key) is None:
+                continue
+            wants_number = "number" in (live_types.get(key) or [])
+            if wants_number:
+                m = re.search(r"\d+", str(acf_fields[key]))
+                acf_fields[key] = int(m.group(0)) if m else None
+            elif not isinstance(acf_fields[key], str):
+                acf_fields[key] = str(acf_fields[key])
 
     # Resolve real WordPress taxonomy terms (program, mode, level,
     # institution, discipline, approval_body) — see _derive_taxonomies.
