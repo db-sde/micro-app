@@ -353,6 +353,12 @@ _PUBLISH_FIELD_DROP: dict[str, set[str]] = {
     "university": {
         "certificate_image",  # no matching field for university pages at all
     },
+    "specialization": {
+        # Removed from the live ACF field group since it was last checked
+        # (confirmed via OPTIONS /wp-json/wp/v2/specialization) — still
+        # extracted and shown in the app, just has nowhere to go on WP.
+        "certificate_heading",
+    },
 }
 
 # Repeater -> wysiwyg HTML-list transforms: our_key -> (wp_key, title_subkey, desc_subkey).
