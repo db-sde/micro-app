@@ -628,6 +628,150 @@ def _derive_taxonomies(
     return result, warnings
 
 
+# ── Relationship fields (linked_university, linked_course, category_page) ──
+# These are real WordPress post-ID references — never derivable from
+# document text directly (there is no "ID" written anywhere in a .docx) —
+# so this resolves them by matching titles we've already extracted
+# against the target post type's existing posts, same "best-effort name
+# lookup, never guess" spirit as the taxonomy resolution above. Confirmed
+# directly against this site: it has duplicate posts for the same
+# real-world entity ("KL University" appears 3x, "Online MCA" 2x under
+# category-page) — so a name match returns EVERY matching post ID, not
+# just the first, rather than arbitrarily picking one.
+
+_post_title_cache: dict[str, list[dict[str, Any]]] = {}
+
+
+def _get_all_posts_lite(post_type: str) -> list[dict[str, Any]]:
+    """Fetch {id, title} for every post of a type. Small counts on this
+    site (dozens, not thousands) as of this writing, so a full fetch is
+    cheap — cached per (post_type) for this process's lifetime. Best-effort:
+    returns whatever was fetched so far (possibly []) on any failure."""
+    if post_type in _post_title_cache:
+        return _post_title_cache[post_type]
+    posts: list[dict[str, Any]] = []
+    page = 1
+    try:
+        while True:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                resp = client.get(
+                    f"{_site_url()}/wp-json/wp/v2/{post_type}",
+                    params={"per_page": 100, "page": page, "status": "any", "_fields": "id,title"},
+                    auth=_auth(),
+                )
+            if resp.status_code >= 400:
+                break
+            batch = resp.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            for item in batch:
+                title = (item.get("title") or {}).get("rendered", "")
+                posts.append({"id": item.get("id"), "title": title})
+            total_pages = int(resp.headers.get("X-WP-TotalPages", "1") or "1")
+            if page >= total_pages:
+                break
+            page += 1
+    except Exception as exc:
+        logger.warning("RELATIONSHIP_LOOKUP_FETCH_FAILED: post_type=%s error=%s", post_type, exc)
+    _post_title_cache[post_type] = posts
+    return posts
+
+
+_TITLE_FILLER_WORDS_RE = re.compile(r"\b(?:online|university|the|of|in|for)\b", re.IGNORECASE)
+
+
+def _normalize_title(text: str) -> str:
+    text = re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
+    text = _TITLE_FILLER_WORDS_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _match_posts_by_name(post_type: str, name: str) -> list[int]:
+    """Every post ID of `post_type` whose title confidently matches
+    `name` — normalized exact match or substring either direction (e.g.
+    our "Sample Global University Online" vs WP's "Sample Global
+    University"). Returns [] rather than guessing when nothing matches."""
+    norm_name = _normalize_title(name)
+    if not norm_name:
+        return []
+    matches = []
+    for post in _get_all_posts_lite(post_type):
+        norm_title = _normalize_title(post["title"])
+        if not norm_title:
+            continue
+        if norm_title == norm_name or norm_title in norm_name or norm_name in norm_title:
+            matches.append(post["id"])
+    return matches
+
+
+_DEGREE_KEYWORD_RE = re.compile(
+    r"\b(executive\s*mba|mba|mca|msc|m\.?sc|bba|bca|b\.?com|m\.?com|b\.?tech|m\.?tech)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_degree_keyword(text: str) -> str | None:
+    m = _DEGREE_KEYWORD_RE.search(text or "")
+    if not m:
+        return None
+    return re.sub(r"\s+", " ", m.group(1)).strip().lower()
+
+
+def _derive_relationships(
+    payload: dict[str, Any], acf_fields: dict[str, Any], page_type: str
+) -> tuple[dict[str, list[int]], list[str]]:
+    """Resolve linked_university / linked_course / category_page to real
+    WordPress post IDs, per page type. Returns (field -> [post_ids], warnings)."""
+    if page_type not in ("course", "specialization"):
+        return {}, []
+
+    result: dict[str, list[int]] = {}
+    warnings: list[str] = []
+    university_name = str(acf_fields.get("university_name") or "")
+    program_name = str(acf_fields.get("program_name") or "")
+    spec_name = str(acf_fields.get("spec_name") or "")
+    doc_title = str((payload.get("_meta") or {}).get("document_title", ""))
+
+    if university_name.strip():
+        ids = _match_posts_by_name("university", university_name)
+        if ids:
+            result["linked_university"] = ids
+        else:
+            warnings.append(
+                f"Could not find a matching WordPress university post for '{university_name}' — link linked_university manually"
+            )
+    else:
+        warnings.append("No university name extracted — link linked_university manually")
+
+    if page_type == "course":
+        keyword = _extract_degree_keyword(program_name) or _extract_degree_keyword(doc_title)
+        if keyword:
+            ids = _match_posts_by_name("category-page", keyword)
+            if ids:
+                result["category_page"] = ids
+            else:
+                warnings.append(
+                    f"Could not find a matching Category Page for '{keyword}' — link category_page manually"
+                )
+        else:
+            warnings.append("Could not determine a program keyword (MBA/MCA/...) — link category_page manually")
+
+    if page_type == "specialization":
+        candidate_ids = _match_posts_by_name("course", university_name) if university_name.strip() else []
+        keyword = _extract_degree_keyword(spec_name) or _extract_degree_keyword(doc_title) or _extract_degree_keyword(university_name)
+        if candidate_ids and keyword:
+            all_courses = {p["id"]: p["title"] for p in _get_all_posts_lite("course")}
+            narrowed = [cid for cid in candidate_ids if keyword in _normalize_title(all_courses.get(cid, ""))]
+            if narrowed:
+                candidate_ids = narrowed
+        if candidate_ids:
+            result["linked_course"] = candidate_ids
+        else:
+            warnings.append("Could not find a matching WordPress course post — link linked_course manually")
+
+    return result, warnings
+
+
 def publish_payload(
     payload: dict[str, Any],
     page_type: str,
@@ -849,6 +993,14 @@ def publish_payload(
     # institution, discipline, approval_body) — see _derive_taxonomies.
     taxonomy_terms, taxonomy_warnings = _derive_taxonomies(payload, acf_fields, page_type)
 
+    # Resolve linked_university / linked_course / category_page to real
+    # WordPress post IDs — see _derive_relationships. These ARE real acf
+    # fields (unlike taxonomy terms, which are top-level REST keys), so
+    # merge straight into acf_fields, overwriting the always-null value
+    # extraction left there (linked_* are SKIP_EXTRACTION_FIELDS).
+    relationship_ids, relationship_warnings = _derive_relationships(payload, acf_fields, page_type)
+    acf_fields.update(relationship_ids)
+
     # Side-load the hero image (if one was uploaded) into WordPress and
     # attach it as the post's native Featured Image, not an acf field.
     featured_media_id: int | None = None
@@ -865,6 +1017,12 @@ def publish_payload(
     post_title = title or _build_title(payload, page_type, fallback=f"Untitled {page_type}")
     base_url = f"{_site_url()}/wp-json/wp/v2/{post_type}"
 
+    # Blog/category posts have no dedicated "body" content field of their
+    # own on the ACF side (just the summary/SEO meta) — without this, the
+    # post's actual content editor is left completely empty, which is
+    # what it's for: the generated page summary IS the post body here.
+    post_content = acf_fields.get("complete_page_summary") if page_type in ("blog", "category") else None
+
     if post_id:
         # Updating an already-published post: title + status + acf together
         # in one request reliably persists the acf data — confirmed
@@ -873,6 +1031,8 @@ def publish_payload(
         body: dict[str, Any] = {"title": post_title, "status": status, "acf": acf_fields}
         if featured_media_id is not None:
             body["featured_media"] = featured_media_id
+        if post_content:
+            body["content"] = post_content
         body.update(taxonomy_terms)
         with httpx.Client(timeout=_TIMEOUT) as client:
             resp = client.post(f"{base_url}/{post_id}", json=body, auth=_auth())
@@ -885,10 +1045,13 @@ def publish_payload(
         # field comes back empty, confirmed by directly inspecting stored
         # posts. Splitting into create-then-update (which we've confirmed
         # DOES persist acf data) works around it with no WordPress-side
-        # change needed.
+        # change needed. "content" is native WP, not ACF, so it's safe to
+        # include on create directly (unaffected by that quirk).
         create_body: dict[str, Any] = {"title": post_title, "status": status}
         if featured_media_id is not None:
             create_body["featured_media"] = featured_media_id
+        if post_content:
+            create_body["content"] = post_content
         create_body.update(taxonomy_terms)
         with httpx.Client(timeout=_TIMEOUT) as client:
             create_resp = client.post(base_url, json=create_body, auth=_auth())
@@ -910,9 +1073,10 @@ def publish_payload(
         "status": data.get("status", status),
         "warnings": image_warnings,
         "taxonomy_warnings": taxonomy_warnings,
+        "relationship_warnings": relationship_warnings,
     }
     logger.info(
-        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s taxonomies=%s",
-        page_type, post_type, wp_id, result["status"], len(image_warnings), taxonomy_terms,
+        "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s taxonomies=%s relationships=%s",
+        page_type, post_type, wp_id, result["status"], len(image_warnings), taxonomy_terms, relationship_ids,
     )
     return result

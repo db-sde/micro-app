@@ -669,6 +669,17 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
               </ul>
             </div>
           )}
+          {result.wp_relationship_warnings?.length > 0 && (
+            <div style={{
+              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
+              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
+            }}>
+              ⚠ Published, but one or more linked pages couldn't be matched automatically — you may want to link these manually in WordPress:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {result.wp_relationship_warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <a href={result.wp_edit_link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ textAlign: 'center' }}>
               Open in WordPress Editor →
