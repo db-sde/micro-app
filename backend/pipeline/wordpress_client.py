@@ -46,6 +46,7 @@ import logging
 import mimetypes
 import os
 import re
+import time
 from typing import Any
 
 import httpx
@@ -640,14 +641,37 @@ def _derive_taxonomies(
 # just the first, rather than arbitrarily picking one.
 
 _post_title_cache: dict[str, list[dict[str, Any]]] = {}
+_post_title_cache_ts: dict[str, float] = {}
+# How long a fetched title list is trusted before being refetched. The
+# backend process on Render runs continuously (not per-request), so an
+# unbounded cache here previously meant: once "university" (etc.) was
+# fetched once, EVERY later publish — including ones referencing
+# universities/courses created or deleted minutes or days afterward, e.g.
+# after the WordPress side was cleared and repopulated — kept matching
+# against that first, now-stale snapshot forever, silently leaving
+# linked_university/linked_course/category_page unresolved. A short TTL
+# bounds that staleness instead of requiring a process restart to clear it.
+_POST_CACHE_TTL_SECONDS = 30
+
+
+def _invalidate_post_cache(post_type: str) -> None:
+    """Drop the cached title list for `post_type` so the next lookup
+    refetches. Called right after this app creates a new post of that
+    type, so a University published in one request is immediately visible
+    to a Course/Specialization published straight after it, without
+    waiting out the TTL."""
+    _post_title_cache.pop(post_type, None)
+    _post_title_cache_ts.pop(post_type, None)
 
 
 def _get_all_posts_lite(post_type: str) -> list[dict[str, Any]]:
     """Fetch {id, title} for every post of a type. Small counts on this
     site (dozens, not thousands) as of this writing, so a full fetch is
-    cheap — cached per (post_type) for this process's lifetime. Best-effort:
-    returns whatever was fetched so far (possibly []) on any failure."""
-    if post_type in _post_title_cache:
+    cheap — cached per (post_type) for up to _POST_CACHE_TTL_SECONDS.
+    Best-effort: returns whatever was fetched so far (possibly []) on any
+    failure."""
+    cached_at = _post_title_cache_ts.get(post_type)
+    if cached_at is not None and (time.monotonic() - cached_at) < _POST_CACHE_TTL_SECONDS:
         return _post_title_cache[post_type]
     posts: list[dict[str, Any]] = []
     page = 1
@@ -674,6 +698,7 @@ def _get_all_posts_lite(post_type: str) -> list[dict[str, Any]]:
     except Exception as exc:
         logger.warning("RELATIONSHIP_LOOKUP_FETCH_FAILED: post_type=%s error=%s", post_type, exc)
     _post_title_cache[post_type] = posts
+    _post_title_cache_ts[post_type] = time.monotonic()
     return posts
 
 
@@ -1057,6 +1082,13 @@ def publish_payload(
             create_resp = client.post(base_url, json=create_body, auth=_auth())
         _raise_for_wp_error(create_resp)
         new_id = create_resp.json().get("id")
+
+        # This new post may itself be a target other publishes resolve
+        # linked_university/linked_course/category_page against — make it
+        # visible to the next lookup immediately rather than waiting out
+        # the cache TTL (see _get_all_posts_lite).
+        if post_type in ("university", "course", "category-page"):
+            _invalidate_post_cache(post_type)
 
         with httpx.Client(timeout=_TIMEOUT) as client:
             resp = client.post(
