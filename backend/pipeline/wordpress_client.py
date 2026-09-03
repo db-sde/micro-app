@@ -752,7 +752,14 @@ def _derive_relationships(
 
     result: dict[str, list[int]] = {}
     warnings: list[str] = []
-    university_name = str(acf_fields.get("university_name") or "")
+    # Some docs explicitly write the target's name in a Quick Facts block
+    # (e.g. "Linked_university - UPES Online"), caught by kv_parser like
+    # any other KV pair and stashed here by formatter.build_json_output
+    # (the linked_* fields themselves stay null — see SKIP_EXTRACTION_FIELDS).
+    # That's a much stronger signal than the derived name fields below —
+    # prefer it when present.
+    hints = (payload.get("_meta") or {}).get("relationship_hints") or {}
+    university_name = str(hints.get("linked_university") or acf_fields.get("university_name") or "")
     program_name = str(acf_fields.get("program_name") or "")
     spec_name = str(acf_fields.get("spec_name") or "")
     doc_title = str((payload.get("_meta") or {}).get("document_title", ""))
@@ -782,17 +789,27 @@ def _derive_relationships(
             warnings.append("Could not determine a program keyword (MBA/MCA/...) — link category_page manually")
 
     if page_type == "specialization":
-        candidate_ids = _match_posts_by_name("course", university_name) if university_name.strip() else []
-        keyword = _extract_degree_keyword(spec_name) or _extract_degree_keyword(doc_title) or _extract_degree_keyword(university_name)
-        if candidate_ids and keyword:
-            all_courses = {p["id"]: p["title"] for p in _get_all_posts_lite("course")}
-            narrowed = [cid for cid in candidate_ids if keyword in _normalize_title(all_courses.get(cid, ""))]
-            if narrowed:
-                candidate_ids = narrowed
-        if candidate_ids:
-            result["linked_course"] = candidate_ids
+        hint_course = str(hints.get("linked_course") or "")
+        if hint_course.strip():
+            ids = _match_posts_by_name("course", hint_course)
+            if ids:
+                result["linked_course"] = ids
+            else:
+                warnings.append(
+                    f"Could not find a matching WordPress course post for '{hint_course}' — link linked_course manually"
+                )
         else:
-            warnings.append("Could not find a matching WordPress course post — link linked_course manually")
+            candidate_ids = _match_posts_by_name("course", university_name) if university_name.strip() else []
+            keyword = _extract_degree_keyword(spec_name) or _extract_degree_keyword(doc_title) or _extract_degree_keyword(university_name)
+            if candidate_ids and keyword:
+                all_courses = {p["id"]: p["title"] for p in _get_all_posts_lite("course")}
+                narrowed = [cid for cid in candidate_ids if keyword in _normalize_title(all_courses.get(cid, ""))]
+                if narrowed:
+                    candidate_ids = narrowed
+            if candidate_ids:
+                result["linked_course"] = candidate_ids
+            else:
+                warnings.append("Could not find a matching WordPress course post — link linked_course manually")
 
     return result, warnings
 
