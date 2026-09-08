@@ -9,7 +9,6 @@ Returns a validation report with:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from acf.fields import ACF_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type

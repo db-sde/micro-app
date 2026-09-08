@@ -84,9 +84,15 @@ _KV_FIELD_MAP: list[tuple[str, str]] = [
     # Establishment
     (r"establish|found(?:ed|ing)|inception|since\s*(?:19|20)\d{2}",
                                                               "established_year"),
-    # Mode of delivery
-    (r"mode\s*(?:of\s*)?(?:learning|study|education|delivery|teaching)",
-                                                              "mode_of_learning"),
+    # Mode of delivery. The trailing qualifier is OPTIONAL: docs commonly
+    # write a bare "Mode - Online" line, and requiring "of learning/study/…"
+    # meant that line matched nothing, was dropped with the rest of the
+    # consumed KV section, and the enricher then GUESSED the mode by
+    # looking for the word "online" in the page prose — which silently
+    # overrode a document that explicitly said "Mode - Hybrid".
+    # \bmode\b keeps "Model"/"Moderate" from matching; payment modes are a
+    # different concept and must not land on this field.
+    (r"\bmode\b(?!\s*of\s*payment)", "mode_of_learning"),
     # Program name (must come BEFORE num_programs to avoid 'Program Name' falling through)
     (r"^program\s*name$",                                     "program_name"),
     # Program count stat — the "total/number of" prefix or "offered/

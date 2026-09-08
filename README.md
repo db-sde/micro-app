@@ -139,6 +139,67 @@ Generate the Application Password under **WP Admin → Users → Profile → App
 
 ---
 
+## Testing & CI
+
+### Running the checks locally
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest            # unit + API tests
+ruff check .      # lint
+```
+
+```bash
+cd frontend
+npm ci && npm run build   # the same build Vercel runs
+```
+
+### What the suite covers
+
+The tests target the parts of the pipeline that have actually broken in
+production — schema drift and publish-time reconciliation — rather than
+chasing a coverage number:
+
+| Area | File | Why it exists |
+|---|---|---|
+| ACF schema invariants | `tests/test_acf_fields.py` | `acf/fields.py` is the source of truth; a duplicate key or a repeater with no sub-fields surfaces as an opaque WordPress 400. |
+| KV fast path | `tests/test_kv_parser.py` | Patterns are ordered and first-match-wins, so an over-greedy one silently swallows another field's line. |
+| Relationship hints | `tests/test_formatter.py` | `linked_*` must stay null in the payload while the document's stated name survives in `_meta` for publish-time resolution. |
+| Heading classifier | `tests/test_classifier.py` | Tag→field routing, including heading/content pairing whose target field name differs per page type. |
+| Publish reconciliation | `tests/test_wordpress_client.py` | Field renames/drops, fee-tier mapping, post-title caching, and relationship matching — all without network access. |
+| Enrichment helpers | `tests/test_enricher.py` | Derived values (duration, fees, syllabus year/semester structure) that reach the page verbatim. |
+| Validation & scoring | `tests/test_validator.py` | Status semantics behind the quality score shown in the UI. |
+| HTTP contract | `tests/test_api.py` | Health probe, the `/schema` endpoint the frontend depends on, and input validation. |
+
+**Safety:** `backend/.env` holds live WordPress and Cloudinary
+credentials, and every pipeline module calls `load_dotenv()` at import.
+`tests/conftest.py` therefore blanks those variables for the whole
+session and replaces httpx's transport with a raiser, so an un-mocked
+network call fails the test instead of publishing to the production site.
+Tests never write to the local dev database.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+- **backend** — ruff, pytest with coverage, and a real import of the ASGI app (catches import-time breakage unit tests can miss).
+- **frontend** — `npm ci && npm run build`, the same command Vercel runs.
+- **hygiene** — fails if an `.env` file, `__pycache__`, or `node_modules` is ever committed, and checks the two requirements manifests stay linked.
+- **ci** — an aggregate job to point branch protection at.
+
+### Deployment
+
+Render (backend) and Vercel (frontend) currently **auto-deploy on push**,
+so CI is advisory: a red build still ships. To make deploys gated, turn
+off auto-deploy on both and add the deploy-hook secrets described at the
+top of `.github/workflows/deploy.yml` — that workflow only runs after CI
+succeeds on `main`, and skips cleanly while the secrets are unset. Set
+the `BACKEND_URL` repository variable to also get a post-deploy health
+check.
+
+---
+
 ## Development Notes
 
 - **Database:** Uses PostgreSQL (integrated with Neon Serverless Postgres). Tables are automatically created/synced at backend startup via SQLAlchemy..

@@ -1,0 +1,47 @@
+# Lint configuration for the backend.
+#
+# The goal here is a gate that is meaningful for NEW code without
+# demanding a stylistic rewrite of the existing 8k lines. So: keep the
+# rules that catch real defects (pyflakes F — undefined names, unused
+# variables, bad f-strings) and drop the purely cosmetic ones this
+# codebase has never followed.
+
+line-length = 100
+target-version = "py311"
+extend-exclude = ["__pycache__"]
+
+[lint]
+select = ["E", "F", "W"]
+
+ignore = [
+    # Several modules deliberately call load_dotenv() or set up logging
+    # before their remaining imports; enforcing import position would mean
+    # reordering module initialisation for no functional gain.
+    "E402",
+    # Long lines are pervasive and mostly in explanatory comments that
+    # would read worse wrapped.
+    "E501",
+    # `l` as a loop variable over lines is idiomatic throughout the parser.
+    "E741",
+    # Trailing whitespace inside the long block comments; noise-only.
+    "W291",
+    "W293",
+]
+
+[lint.per-file-ignores]
+# Package __init__ files re-export names for callers; ruff cannot tell a
+# re-export from an unused import without an explicit __all__.
+"__init__.py" = ["F401"]
+
+# main.py keeps a large block of legacy pipeline code that is explicitly
+# unreachable (it sits after a `return`, and is documented as superseded
+# by pipeline/service.py). It references a name that no longer exists,
+# which is harmless while it cannot execute. Scoped here rather than
+# disabling F821 globally, so a genuine undefined name elsewhere still
+# fails the build.
+"main.py" = ["F821", "F841"]
+
+# Unused locals kept as intermediate steps / debugging aids in the parser.
+"pipeline/docx_parser.py" = ["F841"]
+"pipeline/service.py" = ["F841"]
+"tasks.py" = ["F841"]

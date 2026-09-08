@@ -1,0 +1,108 @@
+name: Deploy
+
+# Gated deploy: only fires after CI has gone green on main.
+#
+# IMPORTANT — this is opt-in and does nothing until configured. Today
+# Render and Vercel both auto-deploy on push, which means a broken commit
+# ships regardless of CI. To make deploys actually gated:
+#
+#   1. Render   → Settings → Build & Deploy → set Auto-Deploy to "No",
+#                 then copy the Deploy Hook URL into the repository secret
+#                 RENDER_DEPLOY_HOOK_URL.
+#   2. Vercel   → Project Settings → Git → disable automatic deploys for
+#                 production, create a Deploy Hook, and store it as
+#                 VERCEL_DEPLOY_HOOK_URL.
+#
+# With neither secret set, every job below skips cleanly, so merging this
+# file changes nothing about the current deploy behaviour.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-backend:
+    name: Deploy backend (Render)
+    runs-on: ubuntu-latest
+    # Never deploy off a red build. workflow_dispatch has no source run,
+    # so it is allowed through for manual redeploys.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL is not set - skipping."
+            echo "Render is presumably still auto-deploying on push; see the"
+            echo "header of .github/workflows/deploy.yml to gate it on CI."
+            exit 0
+          fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$HOOK")
+          echo "Render deploy hook responded with HTTP $status"
+          case "$status" in
+            2*) echo "Deploy triggered." ;;
+            *)  echo "::error::Render deploy hook failed (HTTP $status)"; exit 1 ;;
+          esac
+
+  deploy-frontend:
+    name: Deploy frontend (Vercel)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Trigger Vercel deploy
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "VERCEL_DEPLOY_HOOK_URL is not set - skipping."
+            exit 0
+          fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$HOOK")
+          echo "Vercel deploy hook responded with HTTP $status"
+          case "$status" in
+            2*) echo "Deploy triggered." ;;
+            *)  echo "::error::Vercel deploy hook failed (HTTP $status)"; exit 1 ;;
+          esac
+
+  # ── Post-deploy smoke check ──────────────────────────────────────────
+  smoke:
+    name: Post-deploy smoke test
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    if: always() && !cancelled()
+
+    steps:
+      - name: Probe the live health endpoint
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "Repository variable BACKEND_URL is not set - skipping smoke test."
+            echo "Set it to the deployed API origin (e.g. https://api.example.com)"
+            echo "to have every deploy verified automatically."
+            exit 0
+          fi
+          # Render cold-starts can take a while on the free tier.
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            status=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+              --max-time 30 "$BACKEND_URL/health" || echo 000)
+            if [ "$status" = "200" ]; then
+              echo "Healthy after ${attempt} attempt(s):"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Attempt ${attempt}: HTTP ${status} - retrying in 15s"
+            sleep 15
+          done
+          echo "::error::Backend did not report healthy after the deploy."
+          exit 1

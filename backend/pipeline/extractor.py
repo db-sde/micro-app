@@ -18,7 +18,7 @@ from typing import Any
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from acf.fields import ACF_FIELDS, get_field_type, IMAGE, RELATION
+from acf.fields import ACF_FIELDS, IMAGE, RELATION
 
 load_dotenv()
 logger = logging.getLogger(__name__)

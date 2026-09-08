@@ -263,7 +263,6 @@ def _enrich_course_name(
 
     No API calls — pure regex + heuristic.
     """
-    from pipeline.docx_parser import strip_university_prefix
 
     # Decide which fields to populate based on page type
     if page_type == "university":

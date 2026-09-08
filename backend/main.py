@@ -49,7 +49,7 @@ from pipeline.blog_pipeline import generate_blog_summary
 from pipeline.formatter import build_json_output
 from pipeline import wordpress_client
 from pipeline import cloudinary_client
-from acf.fields import get_image_field_keys, get_file_field_keys, get_field_type, get_valid_field_keys, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
+from acf.fields import get_image_field_keys, get_file_field_keys, get_field_type, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
 
 # ────────────────────────── logging ──────────────────────────
 

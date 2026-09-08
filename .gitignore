@@ -26,3 +26,12 @@ dist-ssr
 *__pycache__/
 *.pyc
 *.db
+
+# Python tooling caches / test artefacts
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+venv/
+.venv/

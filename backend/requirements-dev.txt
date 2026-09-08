@@ -1,0 +1,7 @@
+# Development / CI dependencies.
+# Install the runtime deps first:  pip install -r requirements.txt
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.0.0
+ruff==0.14.2
