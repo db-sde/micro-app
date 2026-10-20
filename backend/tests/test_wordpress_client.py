@@ -505,3 +505,24 @@ def test_publish_refuses_to_run_without_credentials() -> None:
 def test_publish_rejects_an_unknown_status(wp_configured: None) -> None:
     with pytest.raises(ValueError, match="Invalid status"):
         wc.publish_payload({}, "university", status="live")
+
+
+def test_publish_preserves_create_then_acf_update_and_returns_resolved_ids(
+    monkeypatch, wp_configured, fake_httpx_client
+):
+    from conftest import FakeResponse
+    monkeypatch.setattr(wc, "_derive_taxonomies", lambda *args: ({}, ["taxonomy warning"]))
+    monkeypatch.setattr(wc, "_derive_relationships", lambda *args: ({"linked_university": [101], "linked_course": [202]}, ["relationship warning"]))
+    monkeypatch.setattr(wc, "_get_live_acf_field_types", lambda *args: {})
+    holder = fake_httpx_client(FakeResponse({"id": 303, "status": "publish", "link": "https://wp.test/spec/"}))
+    payload = {"spec_name": "Finance", "linked_university": None, "linked_course": None}
+    result = wc.publish_payload(payload, "specialization", status="publish")
+    calls = [call for client in holder.created for call in client.calls]
+    posts = [call for call in calls if call["method"] == "POST"]
+    assert len(posts) == 2
+    assert "acf" not in posts[0]["json"]
+    assert posts[1]["json"]["acf"]["linked_university"] == [101]
+    assert result["linked_university"] == [101] and result["linked_course"] == [202]
+    assert result["relationship_warnings"] == ["relationship warning"]
+    assert result["taxonomy_warnings"] == ["taxonomy warning"]
+    assert payload["linked_university"] is None  # Original reviewed payload is unchanged.

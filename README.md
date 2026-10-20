@@ -205,3 +205,9 @@ check.
 - **Database:** Uses PostgreSQL (integrated with Neon Serverless Postgres). Tables are automatically created/synced at backend startup via SQLAlchemy..
 - **Background Workers:** Bulk zip files are processed sequentially in-process via FastAPI's `BackgroundTasks` helper. No Redis server or Celery worker execution is needed.
 - **Frontend SPA routing on Vercel:** `frontend/vercel.json` rewrites every path to `index.html` so client-side routes (e.g. `/upload/123/validation`) work on a direct load or page refresh, not just via in-app navigation. If you redeploy the frontend somewhere other than Vercel, make sure that host has an equivalent SPA fallback rule.
+
+## Chatbot catalog integration
+
+Optional durable parser-to-chatbot sync, per-post mapping/status, safe retry and
+resumable backfill are documented in [CATALOG_SYNC.md](CATALOG_SYNC.md).
+Delivery is disabled until the server-only chatbot origin and shared secret are set.

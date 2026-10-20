@@ -1123,9 +1123,27 @@ def publish_payload(
         "warnings": image_warnings,
         "taxonomy_warnings": taxonomy_warnings,
         "relationship_warnings": relationship_warnings,
+        "linked_university": relationship_ids.get("linked_university"),
+        "linked_course": relationship_ids.get("linked_course"),
     }
     logger.info(
         "WP_PUBLISHED: page_type=%s post_type=%s id=%s status=%s warnings=%s taxonomies=%s relationships=%s",
         page_type, post_type, wp_id, result["status"], len(image_warnings), taxonomy_terms, relationship_ids,
     )
     return result
+
+
+def read_catalog_references(page_type: str, post_id: str) -> dict[str, Any]:
+    """Read exact WP identity/parents for an operator-reviewed reconciliation; no writes."""
+    if page_type not in ("university", "course", "specialization") or not is_configured():
+        raise ValueError("Catalog reference reconciliation requires a configured WordPress catalog page.")
+    post_type = get_post_type(page_type)
+    with httpx.Client(timeout=_TIMEOUT, follow_redirects=False) as client:
+        response = client.get(f"{_site_url()}/wp-json/wp/v2/{post_type}/{post_id}", auth=_auth())
+    _raise_for_wp_error(response)
+    data = response.json()
+    if str(data.get("id")) != str(post_id):
+        raise ValueError("WordPress returned another post.")
+    acf = data.get("acf") or {}
+    return {"id": data["id"], "link": data.get("link"), "status": data.get("status"),
+            "linked_university": acf.get("linked_university"), "linked_course": acf.get("linked_course")}

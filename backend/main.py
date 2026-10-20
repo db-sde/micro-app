@@ -23,6 +23,7 @@ import os
 import time
 import traceback
 import zipfile
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,13 +33,17 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Que
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 load_dotenv()
 
-from db.database import Base, engine, get_db
+from db.database import Base, engine, get_db, SessionLocal
 from db.models import Upload, FieldMapping, BulkJob
+from catalog import service as catalog_service
+from catalog import recovery as catalog_recovery
+from catalog.routes import router as catalog_router
+from catalog.worker import Worker as CatalogWorker
 from pipeline.docx_parser import parse_docx
 from pipeline.page_detector import detect_page_type
 from pipeline.embedder import match_headings_to_fields, initialize_field_index
@@ -66,6 +71,8 @@ app = FastAPI(
     version="1.0.0",
     description="Parse .docx files, map content to WordPress ACF fields, and export JSON payloads.",
 )
+
+app.include_router(catalog_router)
 
 # Allow all origins for parsing API endpoints
 app.add_middleware(
@@ -97,6 +104,7 @@ async def startup_event():
     """Create DB tables and initialise the embedding index."""
     logger.info("Creating database tables …")
     Base.metadata.create_all(bind=engine)
+    catalog_service.migrate(engine)
     logger.info("Database tables ready.")
 
     logger.info("Initialising field embedding index …")
@@ -107,7 +115,17 @@ async def startup_event():
             "Could not initialise field index (OpenAI key may be missing): %s",
             exc,
         )
+    app.state.catalog_worker = CatalogWorker(SessionLocal)
+    app.state.catalog_worker.start()
     logger.info("Startup complete.")
+
+
+@app.on_event("shutdown")
+async def shutdown_catalog_worker():
+    import asyncio
+    worker = getattr(app.state, "catalog_worker", None)
+    if worker:
+        await asyncio.to_thread(worker.close)
 
 
 # ────────────────────────── request / response models ──────────────────────────
@@ -130,6 +148,8 @@ class PatchPayloadRequest(BaseModel):
 class PublishRequest(BaseModel):
     status: str = "draft"   # draft | publish | pending
     title: str | None = None
+    catalog_slug: str | None = Field(default=None, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    catalog_slug_reviewed: bool = False
 
 
 # ────────────────────────── helpers ──────────────────────────
@@ -267,6 +287,7 @@ def _run_pipeline(
         "page_type": detected_type,
         "payload": payload,
         "validation": validation,
+        "catalog_sync": catalog_service.status_for(db, upload),
         "field_mappings": [
             {
                 "field_key": r["field_key"],
@@ -422,6 +443,7 @@ async def get_upload(upload_id: int, db: Session = Depends(get_db)):
         "score": upload.score,
         "payload": existing_payload,
         "validation": validation,
+        "catalog_sync": catalog_service.status_for(db, upload),
         "field_mappings": [
             {
                 "field_key": m.field_key,
@@ -553,6 +575,7 @@ async def confirm_fields(
         "status": upload.status,
         "payload": existing_payload,
         "validation": validation,
+        "catalog_sync": catalog_service.status_for(db, upload),
         "field_mappings": [
             {
                 "field_key": m.field_key,
@@ -623,6 +646,7 @@ async def patch_payload(
         "status": upload.status,
         "payload": body.payload,
         "validation": validation,
+        "catalog_sync": catalog_service.status_for(db, upload),
         "field_mappings": [
             {
                 "field_key": m.field_key,
@@ -816,6 +840,7 @@ async def list_history(
                 "page_type": u.page_type,
                 "status": u.status,
                 "score": u.score,
+                "catalog_sync": catalog_service.status_for(db, u),
                 "created_at": u.created_at.isoformat() if u.created_at else None,
             }
             for u in uploads
@@ -1253,7 +1278,15 @@ async def publish_to_wordpress(
         )
 
     existing_post_id = (payload_data.get("_meta") or {}).get("wp_post_id")
+    if body.catalog_slug:
+        if not body.catalog_slug_reviewed:
+            raise HTTPException(400, "Review the existing chatbot catalog mapping before providing catalog_slug.")
+        if existing_post_id:
+            post = catalog_service.post_for(db, wordpress_client._site_url(), page_type, str(existing_post_id))
+            if post and post.entity_slug and post.entity_slug != body.catalog_slug:
+                raise HTTPException(400, "An applied catalog slug cannot change automatically.")
 
+    approved_payload = deepcopy(payload_data)
     try:
         result = wordpress_client.publish_payload(
             payload_data,
@@ -1268,15 +1301,48 @@ async def publish_to_wordpress(
         logger.error("WordPress publish failed for upload %d: %s", upload_id, exc)
         raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}")
 
-    # Track the WP post reference in the payload so re-publishing updates it
-    payload_data.setdefault("_meta", {})
-    payload_data["_meta"]["wp_post_id"] = result["id"]
-    payload_data["_meta"]["wp_post_url"] = result["link"]
-    payload_data["_meta"]["wp_status"] = result["status"]
-    upload.payload = json.dumps(payload_data, ensure_ascii=False)
-    upload.status = "published" if result["status"] == "publish" else "draft_published"
-    db.commit()
-    db.refresh(upload)
+    # Durable remote-success journal allows local enqueue/DB recovery without another WP write.
+    # The normal SQL transaction contains BOTH saved WP references and immutable outbox bytes.
+    import uuid
+    recovery_path = None
+    record = dict(upload_id=upload_id, page_type=page_type, payload=approved_payload,
+                  result=result, site=wordpress_client._site_url(),
+                  operation_id=str(uuid.uuid4()), published_at=time.time(), catalog_slug=body.catalog_slug)
+    journal_error = False
+    try:
+        recovery_path, record = catalog_recovery.write(upload_id, page_type, approved_payload, result, wordpress_client._site_url(), catalog_slug=body.catalog_slug)
+    except Exception:
+        journal_error = True
+        logger.error("CATALOG_RECOVERY_JOURNAL_FAILED: upload_id=%s post_id=%s", upload_id, result["id"])
+    try:
+        catalog_service.lock(db)
+        publication = catalog_recovery.apply(db, record)
+        catalog_service.enqueue_safe(db, publication)
+        db.commit()
+        if recovery_path:
+            try:
+                recovery_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("CATALOG_JOURNAL_CLEANUP_PENDING: upload_id=%s post_id=%s", upload_id, result["id"])
+        sync_status = catalog_service.status_for(db, upload)
+    except Exception:
+        db.rollback()
+        logger.error("CATALOG_LOCAL_SAVE_FAILED: upload_id=%s post_id=%s", upload_id, result["id"])
+        # Save references even if the outbox insert failed. A worker/retry can enqueue later.
+        try:
+            catalog_service.lock(db)
+            publication = catalog_recovery.apply(db, record)
+            publication.error = "Local catalog enqueue failed. Retry sync; WordPress has already succeeded."
+            db.commit()
+        except Exception:
+            db.rollback()
+        sync_status = {"status": "failed", "last_error": (
+            "WordPress succeeded. Local save needs recovery; do not republish. "
+            + ("Retry catalog sync after database recovery." if recovery_path else
+               "Recovery storage also failed. Reconcile the returned existing WordPress post ID after storage recovery.")
+        )}
+    if journal_error and sync_status.get("status") != "failed":
+        logger.warning("CATALOG_JOURNAL_UNAVAILABLE_SQL_COMMITTED: upload_id=%s post_id=%s", upload_id, result["id"])
 
     return {
         "upload_id": upload_id,
@@ -1287,6 +1353,7 @@ async def publish_to_wordpress(
         "wp_warnings": result.get("warnings", []),
         "wp_taxonomy_warnings": result.get("taxonomy_warnings", []),
         "wp_relationship_warnings": result.get("relationship_warnings", []),
+        "catalog_sync": sync_status,
     }
 
 

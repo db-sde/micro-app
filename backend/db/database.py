@@ -2,7 +2,8 @@
 Database connection and session management for DegreeBaba backend.
 
 Supports PostgreSQL (production) and SQLite (development fallback).
-If DATABASE_URL is not set or PostgreSQL is unreachable, falls back to SQLite.
+If DATABASE_URL is not set, uses SQLite. PostgreSQL fallback is disabled when
+catalog delivery is configured, to avoid creating an independent version history.
 """
 
 import os
@@ -42,16 +43,18 @@ def _build_engine():
             logger.info("Connected to PostgreSQL: %s", url.split("@")[-1] if "@" in url else url)
             return eng
         except Exception as exc:
+            if os.getenv("CHATBOT_BASE_URL") and os.getenv("CHATBOT_CATALOG_WEBHOOK_SECRET"):
+                raise RuntimeError("Configured catalog database unavailable; refusing a separate SQLite outbox.") from None
             logger.warning(
                 "PostgreSQL unavailable (%s). Falling back to SQLite at %s",
                 exc, _SQLITE_PATH,
             )
 
     # Fallback to SQLite
-    logger.info("Using SQLite database: %s", _SQLITE_PATH)
+    logger.info("Using SQLite database: %s", url if url.startswith("sqlite:") else _SQLITE_PATH)
     sqlite_engine = create_engine(
-        _SQLITE_URL,
-        connect_args={"check_same_thread": False},
+        url if url.startswith("sqlite:") else _SQLITE_URL,
+        connect_args={"check_same_thread": False, "timeout": 30},
         echo=False,
     )
 

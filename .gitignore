@@ -35,3 +35,5 @@ coverage.xml
 htmlcov/
 venv/
 .venv/
+# Private remote-success journals (must never be served under /uploads)
+backend/catalog-recovery/

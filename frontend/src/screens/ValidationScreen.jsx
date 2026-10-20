@@ -5,6 +5,7 @@ import {
   QualityScoreBadge, LoadingSpinner, showToast, Modal, Toggle
 } from '../components/Components';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
+import CatalogSync from '../components/CatalogSync';
 
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -568,12 +569,16 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
   const [publishError, setPublishError] = useState('');
+  const [catalogSlug, setCatalogSlug] = useState('');
+  const [catalogReviewed, setCatalogReviewed] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setResult(null);
       setPublishError('');
       setGoLive(false);
+      setCatalogSlug('');
+      setCatalogReviewed(false);
     }
   }, [isOpen]);
 
@@ -584,7 +589,7 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
       const res = await fetch(`${API_BASE}/publish/${uploadId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: goLive ? 'publish' : 'draft' }),
+        body: JSON.stringify({ status: goLive ? 'publish' : 'draft', catalog_slug: catalogSlug.trim() || null, catalog_slug_reviewed: catalogReviewed }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || `Publish failed (${res.status})`);
@@ -615,6 +620,12 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
             label={goLive ? 'Publish live (public immediately)' : 'Save as draft (recommended)'}
             id="toggle-publish-live"
           />
+          <details style={{ marginTop: 12 }}>
+            <summary>Optional reviewed chatbot mapping</summary>
+            <p>To adopt an existing chatbot record on the first publication, enter its reviewed catalog slug. Leave empty for a new entity. Review existing records using the chatbot operator’s admin session.</p>
+            <input className="form-input" aria-label="Reviewed chatbot catalog slug" value={catalogSlug} onChange={(e) => setCatalogSlug(e.target.value)} />
+            <label style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={catalogReviewed} onChange={(e) => setCatalogReviewed(e.target.checked)} /> I reviewed this mapping.</label>
+          </details>
           {publishError && (
             <div style={{
               marginTop: 16, padding: '10px 14px', background: '#FEE2E2',
@@ -627,7 +638,7 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
             <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-publish">
               Cancel
             </button>
-            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} id="btn-confirm-publish">
+            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing || (!!catalogSlug.trim() && !catalogReviewed)} id="btn-confirm-publish">
               {publishing ? (
                 <>
                   <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
@@ -647,6 +658,7 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
           }}>
             ✓ {result.wp_status === 'publish' ? 'Published live' : 'Saved as draft'} on WordPress (post #{result.wp_post_id})
           </div>
+          <CatalogSync uploadId={uploadId} initialSync={result.catalog_sync} />
           {result.wp_warnings?.length > 0 && (
             <div style={{
               padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
@@ -817,6 +829,7 @@ export default function ValidationScreen() {
       </TopBar>
 
       <StepIndicator currentStep={4} />
+      <CatalogSync uploadId={uploadId} initialSync={data?.catalog_sync} />
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>

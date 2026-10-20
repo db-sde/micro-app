@@ -43,15 +43,26 @@ _CREDENTIAL_ENV_VARS = (
     "CLOUDINARY_API_SECRET",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "DATABASE_URL",
+    "CHATBOT_BASE_URL",
+    "CHATBOT_CATALOG_WEBHOOK_SECRET",
+    "CHATBOT_CATALOG_SOURCE_HOSTS",
 )
+
+
+# Guard collection-time imports too: dotenv loads before session fixtures run.
+import tempfile
+_TEST_ROOT = tempfile.mkdtemp(prefix="degreebaba-tests-")
+for _var in _CREDENTIAL_ENV_VARS:
+    os.environ[_var] = ""
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_ROOT}/collection.db"
+os.environ["CATALOG_RECOVERY_DIR"] = f"{_TEST_ROOT}/recovery"
 
 
 @pytest.fixture(autouse=True, scope="session")
 def _scrub_live_credentials() -> None:
     """Blank real credentials for the entire test session."""
     for var in _CREDENTIAL_ENV_VARS:
-        os.environ.pop(var, None)
+        os.environ[var] = ""
 
 
 @pytest.fixture(autouse=True)
@@ -62,9 +73,6 @@ def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
     ASGI transport, so it never touches the network). Tests that use it
     opt out with @pytest.mark.allow_httpx.
     """
-    if request.node.get_closest_marker("allow_httpx"):
-        return
-
     import httpx
 
     def _blocked(*args: Any, **kwargs: Any):
@@ -73,8 +81,15 @@ def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
             "client instead of calling out to a real service."
         )
 
-    monkeypatch.setattr(httpx.Client, "send", _blocked, raising=False)
-    monkeypatch.setattr(httpx.Client, "request", _blocked, raising=False)
+    original_send = httpx.Client.send
+
+    def guarded_send(client, *args, **kwargs):
+        if request.node.get_closest_marker("allow_httpx") and type(client._transport).__module__ == "starlette.testclient":
+            return original_send(client, *args, **kwargs)
+        return _blocked()
+
+    monkeypatch.setattr(httpx.Client, "send", guarded_send)
+    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked)
 
 
 @pytest.fixture(autouse=True)

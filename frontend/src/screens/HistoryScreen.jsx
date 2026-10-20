@@ -4,6 +4,9 @@ import {
   LoadingSpinner, SkeletonTable, showToast, relativeDate
 } from '../components/Components';
 
+import { Link } from 'react-router-dom';
+import { CatalogBackfill } from '../components/CatalogSync';
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const PAGE_SIZE = 20;
 
@@ -16,10 +19,9 @@ export default function HistoryScreen() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const fetchHistory = async () => {
-    console.log('hi')
+  const fetchHistory = async (quiet = false) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const res = await fetch(`${API_BASE}/history`);
       if (!res.ok) throw new Error('Failed to load history');
       const data = await res.json();
@@ -32,7 +34,11 @@ export default function HistoryScreen() {
     }
   };
 
-  useEffect(() => { fetchHistory(); }, []);
+  useEffect(() => {
+    fetchHistory();
+    const timer = setInterval(() => fetchHistory(true), 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const filtered = useMemo(() => {
     let items = [...history];
@@ -121,6 +127,13 @@ export default function HistoryScreen() {
       render: (val) => <StatusBadge status={val || 'draft'} />
     },
     {
+      key: 'catalog_sync', label: 'Chatbot',
+      render: (val, row) => <div>
+        <Link to={`/upload/${row.id}/validation`}>{val?.status || 'not configured'}</Link>
+        {val?.last_error && <p role="alert" style={{ maxWidth: 280, fontSize: '0.8rem' }}>{val.last_error}</p>}
+      </div>,
+    },
+    {
       key: 'score', label: 'Score',
       render: (val) => (
         <span style={{ fontFamily: 'var(--font-code)', fontWeight: 600 }}>
@@ -175,6 +188,8 @@ export default function HistoryScreen() {
   return (
     <div id="history-screen">
       <TopBar title="Upload History" subtitle={`${filtered.length} uploads found`} />
+
+      <CatalogBackfill />
 
       <SearchBar
         searchValue={search}

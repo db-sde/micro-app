@@ -95,6 +95,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test catalog UI helpers
+        run: npm test
+
       - name: Build
         # Same command Vercel runs. A build error here is a deploy that
         # would have failed in production.
