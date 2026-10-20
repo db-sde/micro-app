@@ -109,7 +109,26 @@ def _raise_for_wp_error(resp: httpx.Response) -> None:
             body = None
 
         if body is None:
-            message = resp.text
+            # Not JSON, so it never reached WordPress (which always answers its
+            # REST API with JSON). Usually Cloudflare's "Just a moment..." bot
+            # challenge or a server firewall. Name that instead of dumping the
+            # whole HTML page into the UI.
+            headers = getattr(resp, "headers", {}) or {}
+            text = resp.text or ""
+            ray = headers.get("cf-ray") or (re.search(r"cRay:\s*'([0-9a-f]+)'", text) or [None, None])[1]
+            if headers.get("cf-mitigated") or "challenge-platform" in text or "Just a moment" in text:
+                raise RuntimeError(
+                    f"Blocked by Cloudflare before reaching WordPress (HTTP {resp.status_code}, bot challenge). "
+                    "Nothing was published. The site's Cloudflare needs a WAF rule that lets this server "
+                    "through for /wp-json/ requests"
+                    + (f" — give its admins Cloudflare ray ID {ray}." if ray else ".")
+                )
+            if resp.status_code in (401, 403, 406, 429, 503):
+                raise RuntimeError(
+                    f"Blocked before reaching WordPress (HTTP {resp.status_code}) by a firewall in front of the site. "
+                    "Nothing was published."
+                )
+            message = " ".join(text.split())[:300] or f"HTTP {resp.status_code}"
         else:
             # WP's top-level "message" for rest_invalid_param is almost
             # always a generic "Invalid parameter(s): acf" with no field

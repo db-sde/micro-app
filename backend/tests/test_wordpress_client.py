@@ -526,3 +526,40 @@ def test_publish_preserves_create_then_acf_update_and_returns_resolved_ids(
     assert result["relationship_warnings"] == ["relationship warning"]
     assert result["taxonomy_warnings"] == ["taxonomy warning"]
     assert payload["linked_university"] is None  # Original reviewed payload is unchanged.
+
+
+# ─────────────────────── errors from in front of WordPress ───────────────────
+
+
+def _resp(status, text, headers=None):
+    return FakeResponse(json_data=None, status_code=status, headers=headers or {}, text=text)
+
+
+class _NotJson(FakeResponse):
+    def json(self):
+        raise ValueError("not json")
+
+
+def test_cloudflare_challenge_is_explained_not_dumped():
+    """Production showed Cloudflare's whole "Just a moment..." HTML as the
+    publish error. It must read as a block, with the ray ID for the admins."""
+    html = "<!DOCTYPE html><title>Just a moment...</title><script>window._cf_chl_opt={cRay: 'a4da8b9ed8348a31'}</script>"
+    resp = _NotJson(status_code=403, text=html, headers={"cf-mitigated": "challenge"})
+    with pytest.raises(RuntimeError) as exc:
+        wc._raise_for_wp_error(resp)
+    msg = str(exc.value)
+    assert "Blocked by Cloudflare" in msg and "a4da8b9ed8348a31" in msg and "Nothing was published" in msg
+    assert "<!DOCTYPE" not in msg
+
+
+def test_other_non_json_blocks_are_short_and_clear():
+    resp = _NotJson(status_code=406, text="<html>Not Acceptable! mod_security</html>")
+    with pytest.raises(RuntimeError, match="firewall in front of the site"):
+        wc._raise_for_wp_error(resp)
+
+
+def test_wordpress_json_errors_still_carry_their_field_detail():
+    resp = FakeResponse({"code": "rest_invalid_param", "message": "Invalid parameter(s): acf",
+                         "data": {"params": {"acf": "acf[nirf_rank] is not of type string."}}}, status_code=400)
+    with pytest.raises(RuntimeError, match=r"nirf_rank\] is not of type string"):
+        wc._raise_for_wp_error(resp)
