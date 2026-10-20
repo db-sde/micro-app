@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  TopBar, StatCard, StatusBadge, DataTable,
-  SkeletonStats, SkeletonTable, showToast, relativeDate
+  TopBar, StatCard, StatusBadge, DataTable, Modal,
+  SkeletonStats, SkeletonTable, showToast, relativeDate,
+  IconButton, DownloadIcon, TrashIcon, downloadUploadJson,
 } from '../components/Components';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -11,32 +12,33 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch recent uploads (fetching enough to derive aggregate stats too)
-      const res = await fetch(`${API_BASE}/history?limit=500`);
-      if (!res.ok) throw new Error('Failed to fetch history');
-      const data = await res.json();
-      const items = data.uploads || [];
-
-      setRecent(items.slice(0, 5));
-
-      const pubCount = items.filter((i) => ['complete', 'processed', 'published'].includes(i.status)).length;
-      const drfCount = items.filter((i) => ['draft', 'validated', 'pending'].includes(i.status)).length;
-      const issCount = items.filter((i) => ['failed', 'issues', 'error'].includes(i.status)).length;
-      const last = items.length > 0 ? items[0] : null;
-
+      // Counts come from one grouped query on the server. This screen used to
+      // download 500 full history rows (several seconds, and it froze the
+      // backend for everyone meanwhile) just to count them here.
+      const [statsRes, recentRes] = await Promise.all([
+        fetch(`${API_BASE}/stats`),
+        fetch(`${API_BASE}/history?limit=5`),
+      ]);
+      if (!statsRes.ok || !recentRes.ok) throw new Error('Could not load the dashboard');
+      const statsData = await statsRes.json();
+      const recentData = await recentRes.json();
+      const by = statsData.by_status || {};
       setStats({
-          published: pubCount,
-          drafts: drfCount,
-          issues: issCount,
-          lastFile: last?.filename || '—',
-          lastTime: last?.created_at || last?.date || null,
+        live: by.published || 0,
+        wpDrafts: by.draft_published || 0,
+        notPublished: (by.processed || 0) + (by.confirmed || 0),
+        total: statsData.total || 0,
+        lastTime: statsData.last_upload_at,
       });
+      setRecent(recentData.uploads || []);
     } catch (err) {
-      showToast(err.message || 'Dashboard fetch failed', 'error');
+      showToast(err.message || 'Dashboard failed to load', 'error');
     } finally {
       setLoading(false);
     }
@@ -46,73 +48,53 @@ export default function DashboardScreen() {
 
   const handleDownload = async (item) => {
     try {
-      const res = await fetch(`${API_BASE}/download/${item.id}`);
-      if (!res.ok) throw new Error('Download failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${item.filename || item.id}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('File downloaded successfully', 'success');
+      await downloadUploadJson(API_BASE, item);
+      showToast('File downloaded', 'success');
     } catch (err) {
       showToast(err.message || 'Download failed', 'error');
     }
   };
 
-  const handleDelete = async (item) => {
-    if (!window.confirm(`Delete "${item.filename}"? This cannot be undone.`)) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await fetch(`${API_BASE}/history/${item.id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/history/${deleteTarget.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
-      setRecent((prev) => prev.filter((h) => h.id !== item.id));
       showToast('Upload deleted', 'success');
+      setDeleteTarget(null);
+      fetchDashboardData();
     } catch (err) {
       showToast(err.message || 'Delete failed', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
   const columns = [
-    { key: 'filename', label: 'Filename', render: (val) => <span style={{ fontWeight: 600 }}>{val || '—'}</span> },
-    { key: 'page_type', label: 'Page Type', render: (val) => (
-      <span style={{ textTransform: 'capitalize' }}>{val || '—'}</span>
-    )},
-    { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val || 'draft'} /> },
-    { key: 'score', label: 'Score', render: (val) => (
-      <span style={{ fontFamily: 'var(--font-code)', fontWeight: 600 }}>
-        {val != null ? `${Math.round(val)}%` : '—'}
-      </span>
-    )},
-    { key: 'created_at', label: 'Date', render: (val, row) => (
-      <span title={val || row.date || ''}>
-        {relativeDate(val || row.date)}
-      </span>
-    )},
     {
-      key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      key: 'filename', label: 'Filename', className: 'cell-wrap',
+      render: (val, row) => (
+        <Link className="row-link" to={`/upload/${row.id}/validation`}>{(val || '—').replace(/\.docx$/i, '')}</Link>
+      ),
+    },
+    { key: 'page_type', label: 'Page Type', render: (val) => <span style={{ textTransform: 'capitalize' }}>{val || '—'}</span> },
+    { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val || 'draft'} /> },
+    {
+      key: 'score', label: 'Score', render: (val) => (
+        <span style={{ fontFamily: 'var(--font-code)', fontWeight: 600 }}>{val != null ? `${Math.round(val)}%` : '—'}</span>
+      ),
+    },
+    { key: 'created_at', label: 'Date', render: (val) => <span title={val || ''} style={{ whiteSpace: 'nowrap' }}>{relativeDate(val)}</span> },
+    {
+      key: 'actions', label: '', sortable: false, className: 'cell-actions', render: (_, row) => (
         <div className="table-actions">
-          <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(row)} id={`download-${row.id}`} title="Download JSON">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(row)} id={`delete-${row.id}`} title="Delete" style={{ color: 'var(--color-error)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+          <IconButton label="Download JSON" onClick={() => handleDownload(row)} id={`download-${row.id}`}><DownloadIcon /></IconButton>
+          <IconButton label="Delete upload" danger onClick={() => setDeleteTarget(row)} id={`delete-${row.id}`}><TrashIcon /></IconButton>
         </div>
       ),
     },
   ];
-
-  const recentUploads = recent;
 
   return (
     <div id="dashboard-screen">
@@ -134,30 +116,10 @@ export default function DashboardScreen() {
       ) : (
         <>
           <div className="stat-grid">
-            <StatCard
-              icon="📄"
-              label="Pages Published"
-              value={stats?.published || 0}
-              color="green"
-            />
-            <StatCard
-              icon="📝"
-              label="Drafts Pending"
-              value={stats?.drafts || 0}
-              color="yellow"
-            />
-            <StatCard
-              icon="⚠️"
-              label="Files with Issues"
-              value={stats?.issues || 0}
-              color="red"
-            />
-            <StatCard
-              icon="🕐"
-              label="Last Upload"
-              value={stats?.lastTime ? relativeDate(stats.lastTime) : 'Never'}
-              color="blue"
-            />
+            <StatCard icon="🌐" label="Live on WordPress" value={stats?.live ?? 0} color="green" />
+            <StatCard icon="📝" label="WordPress drafts" value={stats?.wpDrafts ?? 0} color="yellow" />
+            <StatCard icon="📄" label="Parsed, not published" value={stats?.notPublished ?? 0} color="blue" />
+            <StatCard icon="🕐" label="Last upload" value={stats?.lastTime ? relativeDate(stats.lastTime) : 'Never'} color="red" />
           </div>
 
           <div className="card-header" style={{
@@ -165,21 +127,32 @@ export default function DashboardScreen() {
             borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
             border: '1px solid var(--color-border-light)',
             borderBottom: 'none',
-            marginTop: 4
+            marginTop: 4,
           }}>
-            <h3 className="card-header-title">Recent Uploads</h3>
+            <h3 className="card-header-title">Recent uploads</h3>
             <Link to="/history" className="btn btn-ghost btn-sm" id="btn-view-all">
-              View All →
+              View all {stats?.total ? `(${stats.total})` : ''} →
             </Link>
           </div>
           <DataTable
             columns={columns}
-            data={recentUploads}
+            data={recent}
             emptyMessage="No uploads yet. Start by uploading a .docx file."
             id="recent-uploads-table"
           />
         </>
       )}
+
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete upload">
+        <p style={{ marginBottom: 8, color: 'var(--color-text-primary)', fontWeight: 500 }}>Delete this upload from the app?</p>
+        <p style={{ fontSize: '0.875rem', marginBottom: 16 }}>
+          <strong>{deleteTarget?.filename}</strong> will be permanently removed. The WordPress post, if any, is not affected.
+        </p>
+        <div className="modal-footer" style={{ padding: 0, borderTop: 'none' }}>
+          <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+          <button className="btn btn-danger" onClick={confirmDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
+        </div>
+      </Modal>
     </div>
   );
 }

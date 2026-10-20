@@ -34,7 +34,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, defer
 
 load_dotenv()
 
@@ -306,7 +307,7 @@ def _run_pipeline(
 
 
 @app.post("/upload")
-async def upload_docx(
+def upload_docx(
     file: UploadFile = File(...),
     page_type: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -321,7 +322,7 @@ async def upload_docx(
             detail="Only .docx files are supported. Received: " + file.filename,
         )
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -341,7 +342,7 @@ async def upload_docx(
 
 
 @app.post("/upload-blog")
-async def upload_blog_docx(
+def upload_blog_docx(
     file: UploadFile = File(...),
     page_type: str = Form(default="blog"),
     db: Session = Depends(get_db),
@@ -365,7 +366,7 @@ async def upload_blog_docx(
             detail=f"Invalid page_type: {page_type!r}. Must be blog or category.",
         )
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -414,7 +415,7 @@ async def upload_blog_docx(
 
 
 @app.get("/upload/{upload_id}")
-async def get_upload(upload_id: int, db: Session = Depends(get_db)):
+def get_upload(upload_id: int, db: Session = Depends(get_db)):
     """Get the full upload data including payload and mappings."""
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
@@ -458,7 +459,7 @@ async def get_upload(upload_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/confirm/{upload_id}")
-async def confirm_fields(
+def confirm_fields(
     upload_id: int,
     body: ConfirmRequest,
     db: Session = Depends(get_db),
@@ -591,7 +592,7 @@ async def confirm_fields(
 
 
 @app.patch("/payload/{upload_id}")
-async def patch_payload(
+def patch_payload(
     upload_id: int,
     body: PatchPayloadRequest,
     db: Session = Depends(get_db),
@@ -662,7 +663,7 @@ async def patch_payload(
 
 
 @app.get("/download/{upload_id}")
-async def download_payload(upload_id: int, db: Session = Depends(get_db)):
+def download_payload(upload_id: int, db: Session = Depends(get_db)):
     """Download the ACF JSON payload for an upload as a .json file."""
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
     if not upload:
@@ -687,7 +688,7 @@ async def download_payload(upload_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/bulk")
-async def bulk_upload(
+def bulk_upload(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     dry_run: bool = Form(default=False),
@@ -710,7 +711,7 @@ async def bulk_upload(
             detail=f"Invalid page_type: {page_type!r}.",
         )
 
-    zip_bytes = await file.read()
+    zip_bytes = file.file.read()
     if not zip_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -759,7 +760,7 @@ async def bulk_upload(
 
 
 @app.get("/bulk/{job_id}/progress")
-async def bulk_progress(job_id: int, db: Session = Depends(get_db)):
+def bulk_progress(job_id: int, db: Session = Depends(get_db)):
     """Check the progress of a bulk processing job.
 
     Each per-file result always returns the latest ``quality_score`` and
@@ -813,21 +814,34 @@ async def bulk_progress(job_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/history")
-async def list_history(
+def list_history(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    q: str | None = Query(default=None, max_length=200),
+    page_type: str | None = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
 ):
-    """Return all uploads ordered by most-recent first."""
+    """Return uploads ordered by most-recent first, optionally filtered.
+
+    Filtering happens here rather than in the browser so the totals and
+    pagination reflect every upload, not just the page that was fetched.
+    The full ACF payload is deferred: it can be tens of KB per upload and
+    this list never needs it.
+    """
+    query = db.query(Upload)
+    if q and q.strip():
+        query = query.filter(Upload.filename.ilike(f"%{q.strip()}%"))
+    if page_type and page_type != "all":
+        query = query.filter(Upload.page_type == page_type)
+
+    total = query.count()
     uploads = (
-        db.query(Upload)
+        query.options(defer(Upload.payload))
         .order_by(Upload.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
-
-    total = db.query(Upload).count()
 
     return {
         "total": total,
@@ -848,8 +862,24 @@ async def list_history(
     }
 
 
+@app.get("/stats")
+def upload_stats(db: Session = Depends(get_db)):
+    """Counts per upload status for the dashboard, in one grouped query.
+
+    The dashboard used to download up to 500 full history rows (several
+    seconds of work) just to count them in the browser.
+    """
+    counts = dict(db.query(Upload.status, func.count(Upload.id)).group_by(Upload.status).all())
+    last = db.query(func.max(Upload.created_at)).scalar()
+    return {
+        "total": sum(counts.values()),
+        "by_status": counts,
+        "last_upload_at": last.isoformat() if last else None,
+    }
+
+
 @app.delete("/history/{upload_id}")
-async def delete_upload(upload_id: int, db: Session = Depends(get_db)):
+def delete_upload(upload_id: int, db: Session = Depends(get_db)):
     """Delete an upload and its associated field mappings (cascade).
 
     Best-effort deletes any Cloudinary images this upload created (they're
@@ -889,7 +919,7 @@ _IMAGE_CONTENT_TYPES = {
 
 
 @app.post("/upload-image")
-async def upload_image(
+def upload_image(
     file: UploadFile = File(...),
     upload_id: int = Form(...),
     slot_name: str = Form(...),
@@ -937,7 +967,7 @@ async def upload_image(
             ),
         )
 
-    content = await file.read()
+    content = file.file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -1072,7 +1102,7 @@ async def upload_image(
 
 
 @app.post("/upload-brochure")
-async def upload_brochure(
+def upload_brochure(
     file: UploadFile = File(...),
     upload_id: int = Form(...),
     slot_name: str = Form(default="brochure"),
@@ -1116,7 +1146,7 @@ async def upload_brochure(
             ),
         )
 
-    content = await file.read()
+    content = file.file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -1231,7 +1261,7 @@ async def upload_brochure(
 
 
 @app.post("/publish/{upload_id}")
-async def publish_to_wordpress(
+def publish_to_wordpress(
     upload_id: int,
     body: PublishRequest = PublishRequest(),
     db: Session = Depends(get_db),
@@ -1361,7 +1391,7 @@ async def publish_to_wordpress(
 
 
 @app.post("/parse")
-async def parse_only(file: UploadFile = File(...)):
+def parse_only(file: UploadFile = File(...)):
     """Upload a single .docx file and return only the parsed section map (no database save, no LLM calls)."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
@@ -1372,7 +1402,7 @@ async def parse_only(file: UploadFile = File(...)):
             detail="Only .docx files are supported. Received: " + file.filename,
         )
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
@@ -1387,7 +1417,7 @@ async def parse_only(file: UploadFile = File(...)):
 
 
 @app.get("/schema/{page_type}")
-async def get_schema(page_type: str):
+def get_schema(page_type: str):
     """Field keys selectable for a page type in the Fix Mappings screen.
 
     Single source of truth is acf/fields.py — this exists so the frontend

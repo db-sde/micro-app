@@ -203,8 +203,10 @@ def status_for(db, upload):
     if not configured:
         return dict(status="not configured", last_error=publication.error if publication else None)
     if not publication:
-        meta = json.loads(upload.payload or "{}").get("_meta", {})
-        if meta.get("wp_status") == "publish" and upload.page_type in TYPES:
+        # upload.status is "published" exactly when WordPress reported
+        # status=publish (see recovery.apply). Checking it avoids parsing the
+        # full payload JSON for every row of the history list.
+        if upload.status == "published" and upload.page_type in TYPES:
             return dict(status="failed", last_error="Legacy publication needs review and WordPress reference reconciliation before backfill.")
         return dict(status="not eligible/draft", last_error="Published upserts only. Draft/private/deleted changes do not withdraw existing chatbot records.")
     post = db.get(CatalogPost, publication.post_id)

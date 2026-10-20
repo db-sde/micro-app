@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { catalogRequest, settingsBody, syncLabel } from '../src/components/catalogApi.mjs';
+import { catalogRequest, settingsBody, syncLabel, describeSync } from '../src/components/catalogApi.mjs';
 
 test('catalog HTTP failure remains an actionable error', async () => {
   await assert.rejects(catalogRequest('/uploads/1/retry', { method: 'POST' }, async () => ({
@@ -16,7 +16,7 @@ test('malformed error responses receive a safe fallback', async () => {
 
 test('WordPress success and catalog failure are independent', async () => {
   const publication = { wp_status: 'publish', catalog_sync: { status: 'failed', last_error: 'Chatbot unavailable' } };
-  assert.equal(syncLabel(publication.catalog_sync), 'Chatbot: failed');
+  assert.equal(syncLabel(publication.catalog_sync), 'Chatbot: Sync failed');
   assert.equal(publication.wp_status, 'publish');
   const status = await catalogRequest('/uploads/1', {}, async () => ({ ok: true, json: async () => publication.catalog_sync }));
   assert.equal(status.last_error, 'Chatbot unavailable');
@@ -49,7 +49,7 @@ test('actual catalog panel renders actionable failure and retry alongside separa
   const markup = renderToStaticMarkup(React.createElement(CatalogSync, {
     uploadId: 1, initialSync: { status: 'failed', last_error: 'Resolve linked_university and reconcile.' },
   }));
-  assert.match(markup, /Chatbot: failed/);
+  assert.match(markup, /Sync failed/);
   assert.match(markup, /role="alert"/);
   assert.match(markup, /Resolve linked_university and reconcile/);
   assert.match(markup, /Retry catalog sync/);
@@ -60,8 +60,44 @@ test('actual synced panel shows receiver warnings and omits retry', () => {
   const markup = renderToStaticMarkup(React.createElement(CatalogSync, {
     uploadId: 1, initialSync: { status: 'synced', version: 3, entity_slug: 'nmims', warnings: ['Fee range was preserved without numeric conversion.'] },
   }));
-  assert.match(markup, /Chatbot: synced/);
+  assert.match(markup, /In chatbot/);
   assert.match(markup, /Fee range was preserved/);
   assert.match(markup, /nmims/);
   assert.doesNotMatch(markup, /Retry catalog sync/);
+});
+
+test('statuses read as plain language, not raw sender states', () => {
+  assert.equal(describeSync({ status: 'not eligible/draft' }).label, 'Not sent to chatbot');
+  assert.equal(describeSync({ status: 'not eligible/draft' }).tone, 'muted');
+  assert.equal(describeSync({ status: 'not configured' }).label, 'Chatbot sync off');
+  assert.equal(describeSync({ status: 'synced', version: 2 }).tone, 'success');
+  assert.equal(describeSync(null).label, 'Checking…');
+});
+
+test('only in-flight states keep the UI polling', () => {
+  assert.equal(describeSync({ status: 'queued' }).active, true);
+  assert.equal(describeSync({ status: 'syncing' }).active, true);
+  for (const status of ['synced', 'failed', 'not eligible/draft', 'superseded']) {
+    assert.equal(describeSync({ status }).active, false, status);
+  }
+});
+
+test('a page published before sync existed asks for linking, not a retry that cannot work', () => {
+  const legacy = { status: 'failed', last_error: 'Legacy publication needs review and WordPress reference reconciliation before backfill.' };
+  const view = describeSync(legacy);
+  assert.equal(view.label, 'Needs linking');
+  assert.equal(view.tone, 'warning');
+  assert.equal(view.needsLinking, true);
+  assert.ok(!view.canRetry);
+  const markup = renderToStaticMarkup(React.createElement(CatalogSync, { uploadId: 1, initialSync: legacy }));
+  assert.match(markup, /Needs linking/);
+  assert.match(markup, /<details class="disclosure" open/);
+  assert.doesNotMatch(markup, /Retry catalog sync/);
+});
+
+test('a genuine failure is shown as an error with its reason and a retry', () => {
+  const view = describeSync({ status: 'failed', last_error: 'Chatbot unavailable.' });
+  assert.equal(view.tone, 'error');
+  assert.equal(view.detail, 'Chatbot unavailable.');
+  assert.equal(view.canRetry, true);
 });

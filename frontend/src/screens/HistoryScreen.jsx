@@ -1,89 +1,86 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   TopBar, SearchBar, StatusBadge, DataTable, Modal,
-  LoadingSpinner, SkeletonTable, showToast, relativeDate
+  SkeletonTable, showToast, relativeDate,
+  IconButton, DownloadIcon, TrashIcon, downloadUploadJson,
 } from '../components/Components';
-
-import { Link } from 'react-router-dom';
 import { CatalogBackfill } from '../components/CatalogSync';
+import { describeSync, ACTIVE_SYNC_STATES } from '../components/catalogApi.mjs';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const PAGE_SIZE = 20;
+const POLL_MS = 10000;
+
+export function ChatbotStatus({ sync, uploadId }) {
+  const view = describeSync(sync);
+  const tip = [view.detail, sync?.last_error && sync.last_error !== view.detail ? sync.last_error : '']
+    .filter(Boolean).join('\n');
+  return (
+    <Link to={`/upload/${uploadId}/validation`} title={tip} style={{ textDecoration: 'none' }}>
+      <span className={`badge badge--${view.tone}`}><span className="badge-dot" />{view.label}</span>
+    </Link>
+  );
+}
 
 export default function HistoryScreen() {
-  const [history, setHistory] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const requestId = useRef(0);
 
-  const fetchHistory = async (quiet = false) => {
-    try {
-      if (!quiet) setLoading(true);
-      const res = await fetch(`${API_BASE}/history`);
-      if (!res.ok) throw new Error('Failed to load history');
-      const data = await res.json();
-      setHistory(Array.isArray(data) ? data : data.uploads || []);
-    } catch (err) {
-      showToast(err.message, 'error');
-      setHistory([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Debounce typing so every keystroke doesn't hit the backend.
   useEffect(() => {
-    fetchHistory();
-    const timer = setInterval(() => fetchHistory(true), 5000);
+    const t = setTimeout(() => setQuery(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [query, filter]);
+
+  const fetchPage = useCallback(async (quiet = false) => {
+    const id = ++requestId.current;
+    if (!quiet) setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
+      if (query) params.set('q', query);
+      if (filter !== 'all') params.set('page_type', filter);
+      const res = await fetch(`${API_BASE}/history?${params}`);
+      if (!res.ok) throw new Error('Could not load upload history');
+      const data = await res.json();
+      if (id !== requestId.current) return; // a newer request already answered
+      setRows(data.uploads || []);
+      setTotal(data.total ?? (data.uploads || []).length);
+    } catch (err) {
+      if (!quiet) showToast(err.message, 'error');
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
+  }, [page, query, filter]);
+
+  useEffect(() => { fetchPage(); }, [fetchPage]);
+
+  // Refresh quietly only while a visible row is still being sent to the
+  // chatbot. The old screen re-downloaded the whole history every 5 seconds.
+  const anyActive = rows.some((r) => ACTIVE_SYNC_STATES.includes(r.catalog_sync?.status));
+  useEffect(() => {
+    if (!anyActive) return undefined;
+    const timer = setInterval(() => { if (!document.hidden) fetchPage(true); }, POLL_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [anyActive, fetchPage]);
 
-  const filtered = useMemo(() => {
-    let items = [...history];
-
-    // Filter by page type
-    if (filter !== 'all') {
-      items = items.filter((h) => (h.page_type || '').toLowerCase() === filter);
-    }
-
-    // Search
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      items = items.filter((h) =>
-        (h.filename || '').toLowerCase().includes(q) ||
-        (h.page_type || '').toLowerCase().includes(q)
-      );
-    }
-
-    // Sort newest first
-    items.sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0));
-
-    return items;
-  }, [history, filter, search]);
-
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [search, filter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageEnd = Math.min(pageStart + PAGE_SIZE, filtered.length);
-  const pageData = filtered.slice(pageStart, pageEnd);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, total);
 
   const handleDownload = async (item) => {
     try {
-      const res = await fetch(`${API_BASE}/download/${item.id}`);
-      if (!res.ok) throw new Error('Download failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${item.filename || item.id}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadUploadJson(API_BASE, item);
       showToast('File downloaded', 'success');
     } catch (err) {
       showToast(err.message, 'error');
@@ -96,9 +93,9 @@ export default function HistoryScreen() {
     try {
       const res = await fetch(`${API_BASE}/history/${deleteTarget.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
-      setHistory((prev) => prev.filter((h) => h.id !== deleteTarget.id));
-      showToast('Upload deleted successfully', 'success');
+      showToast('Upload deleted', 'success');
       setDeleteTarget(null);
+      fetchPage(true);
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -111,27 +108,27 @@ export default function HistoryScreen() {
     { value: 'university', label: 'University' },
     { value: 'course', label: 'Course' },
     { value: 'specialization', label: 'Specialization' },
+    { value: 'blog', label: 'Blog' },
   ];
 
   const columns = [
     {
-      key: 'filename', label: 'Filename',
-      render: (val) => <span style={{ fontWeight: 600 }}>{val || '—'}</span>
+      key: 'filename', label: 'Filename', className: 'cell-wrap',
+      render: (val, row) => (
+        <Link className="row-link" to={`/upload/${row.id}/validation`}>{(val || '—').replace(/\.docx$/i, '')}</Link>
+      ),
     },
     {
       key: 'page_type', label: 'Page Type',
-      render: (val) => <span style={{ textTransform: 'capitalize' }}>{val || '—'}</span>
+      render: (val) => <span style={{ textTransform: 'capitalize' }}>{val || '—'}</span>,
     },
     {
       key: 'status', label: 'Status',
-      render: (val) => <StatusBadge status={val || 'draft'} />
+      render: (val) => <StatusBadge status={val || 'draft'} />,
     },
     {
-      key: 'catalog_sync', label: 'Chatbot',
-      render: (val, row) => <div>
-        <Link to={`/upload/${row.id}/validation`}>{val?.status || 'not configured'}</Link>
-        {val?.last_error && <p role="alert" style={{ maxWidth: 280, fontSize: '0.8rem' }}>{val.last_error}</p>}
-      </div>,
+      key: 'catalog_sync', label: 'Chatbot', sortable: false,
+      render: (val, row) => <ChatbotStatus sync={val} uploadId={row.id} />,
     },
     {
       key: 'score', label: 'Score',
@@ -139,55 +136,32 @@ export default function HistoryScreen() {
         <span style={{ fontFamily: 'var(--font-code)', fontWeight: 600 }}>
           {val != null ? `${Math.round(val)}%` : '—'}
         </span>
-      )
-    },
-    {
-      key: 'created_at', label: 'Date',
-      render: (val, row) => (
-        <span title={val || row.date || ''} style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
-          {relativeDate(val || row.date)}
-        </span>
-      )
-    },
-    {
-      key: 'download', label: 'Download', sortable: false,
-      render: (_, row) => (
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => handleDownload(row)}
-          id={`hist-download-${row.id}`}
-          title="Download JSON"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        </button>
       ),
     },
     {
-      key: 'delete', label: '', sortable: false, width: '48px',
+      key: 'created_at', label: 'Date',
+      render: (val) => (
+        <span title={val || ''} style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+          {relativeDate(val)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions', label: '', sortable: false, className: 'cell-actions',
       render: (_, row) => (
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => setDeleteTarget(row)}
-          id={`hist-delete-${row.id}`}
-          title="Delete"
-          style={{ color: 'var(--color-error)' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
+        <div className="table-actions">
+          <IconButton label="Download JSON" onClick={() => handleDownload(row)} id={`hist-download-${row.id}`}><DownloadIcon /></IconButton>
+          <IconButton label="Delete upload" danger onClick={() => setDeleteTarget(row)} id={`hist-delete-${row.id}`}><TrashIcon /></IconButton>
+        </div>
       ),
     },
   ];
 
+  const filtered = query || filter !== 'all';
+
   return (
     <div id="history-screen">
-      <TopBar title="Upload History" subtitle={`${filtered.length} uploads found`} />
+      <TopBar title="Upload History" subtitle={loading && total === 0 ? 'Loading…' : `${total} upload${total === 1 ? '' : 's'}${filtered ? ' match' : ''}`} />
 
       <CatalogBackfill />
 
@@ -199,52 +173,44 @@ export default function HistoryScreen() {
         filterOptions={filterOptions}
       />
 
-      {loading ? (
+      {loading && rows.length === 0 ? (
         <SkeletonTable rows={8} cols={7} />
       ) : (
-        <DataTable
-          columns={columns}
-          data={pageData}
-          emptyMessage={search || filter !== 'all' ? 'No uploads match your search.' : 'No uploads yet. Start by uploading a .docx file.'}
-          id="history-table"
-          pagination={filtered.length > PAGE_SIZE ? {
-            page,
-            totalPages,
-            total: filtered.length,
-            from: pageStart + 1,
-            to: pageEnd,
-            onPrev: () => setPage((p) => Math.max(1, p - 1)),
-            onNext: () => setPage((p) => Math.min(totalPages, p + 1)),
-          } : undefined}
-        />
+        <div style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 150ms' }} aria-busy={loading}>
+          <DataTable
+            columns={columns}
+            data={rows}
+            emptyMessage={filtered ? 'No uploads match your search.' : 'No uploads yet. Start by uploading a .docx file.'}
+            id="history-table"
+            pagination={total > PAGE_SIZE ? {
+              page,
+              totalPages,
+              total,
+              from,
+              to,
+              onPrev: () => setPage((p) => Math.max(1, p - 1)),
+              onNext: () => setPage((p) => Math.min(totalPages, p + 1)),
+            } : undefined}
+          />
+        </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <Modal
-        isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        title="Delete Upload"
-      >
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete upload">
         <div style={{ marginBottom: 24 }}>
           <p style={{ marginBottom: 8, color: 'var(--color-text-primary)', fontWeight: 500 }}>
-            Are you sure you want to delete this upload?
+            Delete this upload from the app?
           </p>
           <p style={{ fontSize: '0.875rem' }}>
-            <strong>{deleteTarget?.filename}</strong> will be permanently removed. This action cannot be undone.
+            <strong>{deleteTarget?.filename}</strong> will be permanently removed. This cannot be undone.
           </p>
           {(deleteTarget?.status === 'published' || deleteTarget?.status === 'draft_published') && (
-            <div style={{
-              marginTop: 12, padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
-              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
-            }}>
-              ⚠ This upload was already published to WordPress. Deleting it here only removes it from this app — the WordPress post itself stays live and untouched.
+            <div className="notice notice--warning" style={{ marginTop: 12 }}>
+              This upload was published to WordPress. Deleting it here only removes it from this app — the WordPress post stays as it is.
             </div>
           )}
         </div>
         <div className="modal-footer" style={{ padding: 0, borderTop: 'none' }}>
-          <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)} id="btn-cancel-delete">
-            Cancel
-          </button>
+          <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)} id="btn-cancel-delete">Cancel</button>
           <button className="btn btn-danger" onClick={confirmDelete} disabled={deleting} id="btn-confirm-delete">
             {deleting ? 'Deleting…' : 'Delete'}
           </button>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import {
   TopBar, StepIndicator, StatusBadge, ConfidenceBar,
-  QualityScoreBadge, LoadingSpinner, showToast, Modal, Toggle
+  QualityScoreBadge, LoadingSpinner, showToast, Modal
 } from '../components/Components';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
 import CatalogSync from '../components/CatalogSync';
@@ -614,24 +614,34 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
               ? 'This upload was already published — publishing again updates that same WordPress post.'
               : 'This creates a new WordPress post populated with all ACF fields from this upload, including any uploaded images.'}
           </p>
-          <Toggle
-            checked={goLive}
-            onChange={setGoLive}
-            label={goLive ? 'Publish live (public immediately)' : 'Save as draft (recommended)'}
-            id="toggle-publish-live"
-          />
-          <details style={{ marginTop: 12 }}>
-            <summary>Optional reviewed chatbot mapping</summary>
-            <p>To adopt an existing chatbot record on the first publication, enter its reviewed catalog slug. Leave empty for a new entity. Review existing records using the chatbot operator’s admin session.</p>
-            <input className="form-input" aria-label="Reviewed chatbot catalog slug" value={catalogSlug} onChange={(e) => setCatalogSlug(e.target.value)} />
-            <label style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={catalogReviewed} onChange={(e) => setCatalogReviewed(e.target.checked)} /> I reviewed this mapping.</label>
+          <fieldset className="choice-group" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="sr-only">How to publish</legend>
+            <label className={`choice${!goLive ? ' is-selected' : ''}`}>
+              <input type="radio" name="publish-mode" checked={!goLive} onChange={() => setGoLive(false)} id="publish-mode-draft" />
+              <span>
+                <span className="choice-title">Save as WordPress draft</span>
+                <span className="choice-desc" style={{ display: 'block' }}>Private. Review it in WordPress before it goes public. Recommended.</span>
+              </span>
+            </label>
+            <label className={`choice${goLive ? ' is-selected' : ''}`}>
+              <input type="radio" name="publish-mode" checked={goLive} onChange={() => setGoLive(true)} id="publish-mode-live" />
+              <span>
+                <span className="choice-title">Publish live</span>
+                <span className="choice-desc" style={{ display: 'block' }}>Public immediately. Live university, course and specialization pages are also sent to the chatbot.</span>
+              </span>
+            </label>
+          </fieldset>
+          <details className="disclosure">
+            <summary>Advanced: link to an existing chatbot record</summary>
+            <div className="disclosure-body">
+              <p style={{ margin: 0 }}>Only if the chatbot already has this exact page. Leave empty to create a new chatbot record.</p>
+              <input className="form-input" aria-label="Reviewed chatbot catalog slug" placeholder="e.g. nmims" value={catalogSlug} onChange={(e) => setCatalogSlug(e.target.value)} />
+              <label className="check-label"><input type="checkbox" checked={catalogReviewed} onChange={(e) => setCatalogReviewed(e.target.checked)} /> I checked this mapping in the chatbot.</label>
+            </div>
           </details>
           {publishError && (
-            <div style={{
-              marginTop: 16, padding: '10px 14px', background: '#FEE2E2',
-              color: '#DC2626', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
-            }}>
-              ⚠ {publishError}
+            <div className="notice notice--error" role="alert" style={{ marginTop: 16 }}>
+              {publishError}
             </div>
           )}
           <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
@@ -645,7 +655,7 @@ function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
                   Publishing…
                 </>
               ) : (
-                goLive ? 'Publish Live' : 'Save Draft to WordPress'
+                goLive ? 'Publish live now' : 'Save draft to WordPress'
               )}
             </button>
           </div>
@@ -761,10 +771,6 @@ export default function ValidationScreen() {
     } catch (err) {
       showToast(err.message, 'error');
     }
-  };
-
-  const handleSaveDraft = () => {
-    showToast('Saved as draft successfully', 'success');
   };
 
   // Merge updated server response back into local state
@@ -940,18 +946,12 @@ export default function ValidationScreen() {
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-        <button className="btn btn-secondary" onClick={handleSaveDraft} id="btn-save-draft">
-          Save as Draft
-        </button>
-
-        {/* View / Edit JSON */}
+      {/* Action buttons — sticky so publishing doesn't require scrolling past every field */}
+      <div className="sticky-actions" id="validation-actions">
         <button
           className="btn btn-secondary"
           onClick={() => setJsonModalOpen(true)}
           id="btn-view-edit-json"
-          style={{ display: 'flex', alignItems: 'center', gap: 7 }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="16 18 22 12 16 6" />
@@ -969,17 +969,12 @@ export default function ValidationScreen() {
           Download JSON
         </button>
 
-        <Link to={`/upload/${uploadId}/mapping`} state={{ uploadData: data }} className="btn btn-primary" id="btn-go-fix-mappings">
-          Fix Mappings →
-        </Link>
-
         <button
           className="btn btn-primary"
           onClick={() => setPublishModalOpen(true)}
           id="btn-publish-wordpress"
-          style={{ display: 'flex', alignItems: 'center', gap: 7 }}
         >
-          🚀 Publish to WordPress
+          Publish to WordPress
         </button>
       </div>
 

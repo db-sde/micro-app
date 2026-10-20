@@ -124,6 +124,9 @@ code, .font-mono {
 .main-content {
   margin-left: var(--sidebar-width);
   flex: 1;
+  /* Flex children default to min-width:auto, so a wide table used to push
+     the whole page past the window and add a horizontal scrollbar. */
+  min-width: 0;
   min-height: 100vh;
   background: var(--color-bg);
   padding: 32px;
@@ -1610,4 +1613,137 @@ code, .font-mono {
   .main-content {
     padding: 24px;
   }
+}
+
+/* ═══════════════════════════════════════
+   UX fixes
+   ═══════════════════════════════════════ */
+
+/* Icons inside buttons must never be squeezed by flex layout — a 30px-wide
+   table cell used to crush them to ~3px, so actions showed as stray dots. */
+.btn > svg { flex-shrink: 0; }
+
+.btn-icon-sm {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+.btn-ghost-danger { color: var(--color-error); }
+.btn-ghost-danger:hover:not(:disabled) { background: var(--color-error-light); color: #B91C1C; }
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.data-table th.cell-actions,
+.data-table td.cell-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.data-table td.cell-wrap { min-width: 220px; }
+
+.row-link {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.row-link:hover { color: var(--color-orange); text-decoration: underline; }
+
+/* Extra badge tones */
+.badge--info    { background: var(--color-info-light);    color: var(--color-info); }
+.badge--warning { background: var(--color-warning-light); color: #92400E; }
+.badge--success { background: var(--color-success-light); color: #15803D; }
+.badge--error   { background: var(--color-error-light);   color: #B91C1C; }
+.badge--muted   { background: #F1F5F9;                    color: #64748B; }
+
+/* Primary actions stay reachable on long pages instead of only at the very
+   bottom of a 3000px field table. */
+.sticky-actions {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.10);
+}
+.sticky-actions .spacer { flex: 1; }
+
+/* Disclosure sections (were bare browser-default <details>) */
+.disclosure { margin-top: 12px; border-top: 1px solid var(--color-border-light); padding-top: 10px; }
+.disclosure > summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::before { content: '▸'; transition: transform var(--transition-base); }
+.disclosure[open] > summary::before { transform: rotate(90deg); }
+.disclosure > summary:hover { color: var(--color-text-primary); }
+.disclosure-body { display: grid; gap: 12px; padding-top: 12px; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.disclosure-body h4 { font-size: 0.8125rem; color: var(--color-text-primary); margin: 4px 0 0; }
+.field-label { display: grid; gap: 6px; font-weight: 600; color: var(--color-text-primary); font-size: 0.8125rem; }
+.check-label { display: flex; gap: 8px; align-items: flex-start; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.check-label input { margin-top: 2px; }
+
+/* Chatbot sync panel */
+.sync-panel { padding: 14px 18px; margin: 0 0 20px; }
+.sync-panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sync-panel-title { font-weight: 600; font-size: 0.875rem; color: var(--color-text-primary); }
+.sync-panel-detail { margin-top: 6px; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.sync-panel-detail--error { color: #B91C1C; }
+.sync-panel-head .btn { margin-left: auto; }
+
+/* Publish choice (replaces an ambiguous on/off switch) */
+.choice-group { display: grid; gap: 10px; }
+.choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-base), background var(--transition-base);
+}
+.choice:hover { border-color: #CBD5E1; }
+.choice.is-selected { border-color: var(--color-orange); background: #FFF7F3; }
+.choice input { margin-top: 3px; accent-color: var(--color-orange); }
+.choice-title { font-weight: 600; font-size: 0.875rem; color: var(--color-text-primary); }
+.choice-desc { font-size: 0.8125rem; color: var(--color-text-secondary); margin-top: 2px; }
+
+.notice { padding: 10px 14px; border-radius: var(--radius-md); font-size: 0.8125rem; }
+.notice--warning { background: #FEF3C7; color: #92400E; }
+.notice--error { background: var(--color-error-light); color: #B91C1C; }
+.notice--info { background: var(--color-info-light); color: #1E40AF; }
+
+/* Compact chatbot backfill card on History */
+.backfill-card { padding: 14px 18px; margin-bottom: 20px; }
+.backfill-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.backfill-head p { margin: 2px 0 0; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.backfill-head .btn { margin-left: auto; }
+.backfill-list { margin: 10px 0 0; padding-left: 18px; font-size: 0.8125rem; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
