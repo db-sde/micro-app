@@ -555,6 +555,9 @@ def is_real_section_heading(text: str, style_name: str = "") -> bool:
     return True
 
 
+_STEP_LINE_RE = re.compile(r"^\s*step\s*[-–:.]?\s*\d+\b", re.I)
+
+
 def _walk_body(
     doc,
     para_map: dict[int, Any],
@@ -591,7 +594,13 @@ def _walk_body(
             if para.style and para.style.name:
                 style_name = para.style.name
 
-            if _is_heading(para):
+            styled = any(h in style_name.lower() for h in ("heading", "title"))
+            if _is_heading(para) and (styled or not _STEP_LINE_RE.match(text)):
+                # A bold "Step 1. Ensure your eligibility:" line is a step of
+                # the section it sits in, not a new section. As headings,
+                # every step became its own untagged section and the
+                # admission section kept only its intro (UPES). Steps the
+                # writer styled as Word headings (blog guides) stay headings.
                 if is_real_section_heading(text, style_name):
                     # Flush previous section only if it has content
                     if current_content:

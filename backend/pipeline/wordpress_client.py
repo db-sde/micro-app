@@ -349,13 +349,30 @@ def _normalize_admission_steps(html: str) -> tuple[str, str | None]:
       instructions") were numbered 7, 8, … as if they were steps; their text
       is returned so it can become the note instead.
     """
+    # Top-level blocks; step titles may be <p> or <h4> ("<h4>Step 1. …</h4>").
+    blocks = [(m.group(1).lower(), m.group(0), m.group(2).strip())
+              for m in re.finditer(r"<(p|h[1-6]|ul|ol)\b[^>]*>(.*?)</\1>", html, re.I | re.S)]
+    starts = [i for i, (tag, _, inner) in enumerate(blocks)
+              if tag not in ("ul", "ol") and _STEP_RE.match(_plain(inner))]
+    if len(starts) >= 2:
+        intro = "".join(raw for _, raw, _ in blocks[: starts[0]])
+        items, note = [], []
+        for n, start in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else len(blocks)
+            title, body = blocks[start][2], blocks[start + 1: end]
+            if n + 1 == len(starts) and body:
+                # After the last step: its description, then anything else
+                # ("Additional information: …") is a note, not the step.
+                body, rest = body[:1], body[1:]
+                for tag, _, inner in rest:
+                    parts = re.findall(r"<li[^>]*>(.*?)</li>", inner, re.I | re.S) if tag in ("ul", "ol") else [inner]
+                    note += [t for t in map(_plain, parts) if t and not t.endswith(":")]
+            text_body = [inner if tag == "p" else raw for tag, raw, inner in body]
+            if body and _plain(title).endswith(":") and "<strong>" not in title.lower():
+                title = f"<strong>{title}</strong>"
+            items.append("<li>" + " ".join([title, *text_body]) + "</li>")
+        return intro + f"<ol>{''.join(items)}</ol>", " ".join(note) or None
     if "<li" not in html.lower():
-        paras = re.findall(r"<p[^>]*>(.*?)</p>", html, re.I | re.S)
-        steps = [p for p in paras if _STEP_RE.match(p)]
-        if len(steps) >= 2:
-            intro = "".join(f"<p>{p}</p>" for p in paras if p not in steps and paras.index(p) < paras.index(steps[0]))
-            items = "".join(f"<li>{p.strip()}</li>" for p in steps)
-            return intro + f"<ol>{items}</ol>", None
         return html, None
     first_close = re.search(r"</(ol|ul)>", html, re.I)
     if not first_close:
