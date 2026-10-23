@@ -196,15 +196,25 @@ def _get_live_acf_field_types(post_type: str) -> dict[str, list[str]]:
 # ────────────────────────── post publishing ──────────────────────────
 
 
+# The page's own name comes first. Checking university_name first for every
+# page type titled every course and specialization after its university
+# ("Sharda University Online", "Upes"), which also gave live specializations
+# slugs like /specialization/upes/.
+_TITLE_KEYS: dict[str, tuple[str, ...]] = {
+    "university": ("university_name", "university_full_name"),
+    "course": ("program_name",),
+    "specialization": ("spec_name",),
+    "blog": ("seo_title",),
+    "category": ("seo_title",),
+}
+
+
 def _build_title(payload: dict[str, Any], page_type: str, fallback: str) -> str:
-    # blog/category posts have none of university_name/program_name/spec_name
-    # — seo_title is the closest thing they have to a natural title, so
-    # it's checked last as a real (if imperfect) fallback before giving up
-    # and using the generic "Untitled ..." fallback string.
-    for key in ("university_name", "program_name", "spec_name", "seo_title"):
+    preferred = _TITLE_KEYS.get(page_type, ())
+    for key in (*preferred, "spec_name", "program_name", "university_name", "seo_title"):
         val = payload.get(key)
-        if val and isinstance(val, str):
-            return val
+        if val and isinstance(val, str) and val.strip():
+            return val.strip()
     return fallback
 
 

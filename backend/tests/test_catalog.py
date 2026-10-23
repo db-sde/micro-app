@@ -551,3 +551,14 @@ def test_binding_still_refuses_to_switch_once_events_exist(factory, api, monkeyp
     _bind_to(factory, "https://degreebaba.com", "https://other-chatbot.test")
     with factory() as db, pytest.raises(SyncError, match="bound to another"):
         service.bind_site(db, settings())
+
+
+def test_course_without_university_gets_an_actionable_message(factory):
+    """Production case: the course was published before its university
+    existed, so it has no university link. The old message claimed the two
+    belonged to different universities, which pointed at the wrong fix."""
+    saved(factory, add_upload(factory, "university"), 101)
+    saved(factory, add_upload(factory, "course"), 202, kind="course", university=None, enqueue=False)
+    spec = add_upload(factory, "specialization")
+    with pytest.raises(SyncError, match=r"Linked course #202 has no university recorded.*university #101"):
+        saved(factory, spec, 303, kind="specialization", university=101, course=202)

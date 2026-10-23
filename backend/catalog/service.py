@@ -123,6 +123,8 @@ def validate_snapshot(db, post, publication, config):
             raise SyncError("Resolve exactly one linked_course WordPress post ID, then reconcile this upload.")
         course = post_for(db, post.site, "course", publication.course_id)
         parent = latest_publication(db, course) if course else None
+        if parent and not parent.university_id:
+            raise SyncError(f"Linked course #{publication.course_id} has no university recorded (it was probably published before its university existed). Republish that course so it links to university #{publication.university_id}, then retry.")
         if parent and parent.university_id != publication.university_id:
             raise SyncError("Course and specialization belong to different universities. Correct WordPress relationships and reconcile.")
 

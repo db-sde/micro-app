@@ -63,9 +63,19 @@ def test_site_url_trailing_slash_is_stripped(monkeypatch: pytest.MonkeyPatch) ->
 # ─────────────────────────────── post titles ────────────────────────────────
 
 
-def test_build_title_prefers_the_most_specific_name() -> None:
-    payload = {"university_name": "Sharda", "program_name": "MBA"}
-    assert wc._build_title(payload, "course", "Untitled") == "Sharda"
+def test_build_title_uses_each_page_types_own_name() -> None:
+    """Regression: courses and specializations were titled with their
+    university's name, because university_name was checked first."""
+    payload = {"university_name": "Sharda University Online", "program_name": "Sharda Online MBA",
+               "spec_name": "Marketing Management"}
+    assert wc._build_title(payload, "university", "Untitled") == "Sharda University Online"
+    assert wc._build_title(payload, "course", "Untitled") == "Sharda Online MBA"
+    assert wc._build_title(payload, "specialization", "Untitled") == "Marketing Management"
+
+
+def test_build_title_falls_back_when_the_own_name_is_missing() -> None:
+    assert wc._build_title({"university_name": "Sharda"}, "course", "Untitled") == "Sharda"
+    assert wc._build_title({"program_name": "MBA", "university_name": "UPES"}, "specialization", "Untitled") == "MBA"
 
 
 def test_build_title_falls_back_through_to_seo_title() -> None:
