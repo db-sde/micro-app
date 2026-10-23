@@ -100,6 +100,12 @@ ACF_FIELDS = {
         # Content
         {'key': 'about_content',        'type': HTML,     'embed': 'about program description overview introduction body'},
         {'key': 'specializations_intro', 'type': TEXT,     'embed': 'specializations intro one line subtitle pick choose from'},
+        # WordPress's "specialization" repeater and fee range. Filled from the
+        # document's specialization-wise fee table (enricher), which used to
+        # have no field to go to and was lost.
+        {'key': 'specialization',      'type': JSON_ARRAY, 'embed': 'specializations offered list names specialization wise fees',
+         'sub_fields': [{'key': 'specialization_name', 'type': TEXT}, {'key': 'specialization_details', 'type': TEXT}]},
+        {'key': 'course_amount_range', 'type': TEXT,     'embed': 'fee range minimum maximum across specializations'},
         {'key': 'eligibility_content',   'type': JSON_ARRAY, 'embed': 'eligibility criteria who can apply requirements qualification',
          'sub_fields': [{'key': 'eligibility_title', 'type': TEXT}, {'key': 'eligibility_description', 'type': TEXTAREA}]},
         {'key': 'admission_steps',       'type': HTML,     'embed': 'admission process steps how to apply procedure enrollment'},

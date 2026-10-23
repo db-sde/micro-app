@@ -231,6 +231,30 @@ def parse_kv_section(raw_text: str) -> list[dict[str, Any]]:
     return results
 
 
+def kv_line_coverage(raw_text: str) -> float:
+    """Share of the block's non-empty lines that are recognised KV pairs.
+
+    The pre-pass removes a KV section from normal extraction. That is right
+    for a Quick Facts block, but a section with one recognisable line inside
+    a specialization fee table or prose used to lose every other line.
+    Callers use this to keep such mixed sections for normal extraction.
+    """
+    lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+    if not lines:
+        return 0.0
+    matched = 0
+    for line in lines:
+        parts = KV_DELIMITER_RE.split(line, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        key_text = re.sub(r"<[^>]+>", "", parts[0]).strip()
+        if not key_text or key_text.endswith("?") or len(key_text) > 80:
+            continue
+        if any(re.search(pattern, key_text, re.IGNORECASE) for pattern, _ in _KV_FIELD_MAP):
+            matched += 1
+    return matched / len(lines)
+
+
 def flatten_section_to_text(content: Any) -> str:
     """Convert section content (any type) to a plain-text string for KV detection."""
     if isinstance(content, str):

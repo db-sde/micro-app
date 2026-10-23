@@ -422,6 +422,137 @@ def _fill_specializations_from_fees(
         )
 
 
+_FEE_AMOUNT_RE = re.compile(r"(?:₹|\bINR\b|\bRs\.?)\s*\d[\d,]*(?:\.\d+)?(?:\s*/-)?|\b\d{1,3}(?:,\d{2,3})+(?:\s*/-)?", re.I)
+
+
+def _amount_value(text: str) -> int | None:
+    m = _FEE_AMOUNT_RE.search(text or "")
+    if not m:
+        return None
+    digits = re.sub(r"[^\d]", "", m.group(0).split(".")[0])
+    return int(digits) if digits else None
+
+
+def _fee_column_label(key: str) -> str:
+    """'shoolini_online_mba_fee_with_pay_after_placement_option' ->
+    'with pay after placement option'."""
+    tail = re.split(r"fees?_?", key.lower(), maxsplit=1)[-1] if "fee" in key.lower() else key.lower()
+    return tail.replace("_", " ").strip()
+
+
+def collect_specialization_fees(section_map: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rows of {name, fees: [(column_label, text)]} from specialization-wise
+    fee tables (a column whose header mentions "specialization" plus one or
+    more fee columns). Deterministic — no model involved."""
+    found: dict[str, dict[str, Any]] = {}
+    for heading, section in (section_map or {}).items():
+        if heading.startswith("__") or not isinstance(section, dict):
+            continue
+        content = section.get("content")
+        tables = content.get("tables") if isinstance(content, dict) else None
+        for table in tables or []:
+            for row in (table or {}).get("data") or []:
+                if not isinstance(row, dict):
+                    continue
+                name_key = next((k for k in row if "speciali" in k.lower()), None)
+                if not name_key:
+                    continue
+                name = _strip_html(str(row.get(name_key) or "")).strip()
+                if not name or _FEE_AMOUNT_RE.search(name):
+                    continue
+                fees = []
+                for key, value in row.items():
+                    text = _strip_html(str(value or "")).strip()
+                    if key != name_key and _FEE_AMOUNT_RE.search(text):
+                        fees.append((_fee_column_label(key), text))
+                if fees:
+                    found.setdefault(name.lower(), {"name": name, "fees": fees})
+    return list(found.values())
+
+
+def _specialization_names_from_list(section_map: dict[str, Any]) -> list[str]:
+    """Names from a "<Program> Specializations" section written as a list."""
+    for heading, section in (section_map or {}).items():
+        if heading.startswith("__") or not isinstance(section, dict):
+            continue
+        if "speciali" not in heading or "fee" in heading:
+            continue
+        content = section.get("content")
+        if isinstance(content, list):
+            names = [_strip_html(str(x)).strip() for x in content if isinstance(x, str)]
+            names = [n for n in names if 1 <= len(n.split()) <= 7 and not n.endswith((".", ":"))]
+            if len(names) >= 2:
+                return names
+    return []
+
+
+def _fee_range_text(texts: list[str]) -> str | None:
+    priced = [(v, t) for t in texts if (v := _amount_value(t))]
+    if not priced:
+        return None
+    lo = min(priced)[1]
+    hi = max(priced)[1]
+    return lo if min(priced)[0] == max(priced)[0] else f"{lo} – {hi}"
+
+
+def _derive_specialization_fees(
+    payload: dict[str, Any],
+    section_map: dict[str, Any],
+    page_type: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """Fill the course's specialization list + fee range, and the fees of a
+    specialization page's "other specializations", from the document's
+    specialization-wise fee table. Those rows previously had nowhere to go:
+    courses whose fee varies by specialization showed an empty fee section
+    and "Specializations: 0 rows"."""
+    rows = collect_specialization_fees(section_map)
+    all_fees = [text for r in rows for _, text in r["fees"]]
+
+    if page_type == "course":
+        if rows:
+            payload["specialization"] = [
+                {"specialization_name": r["name"],
+                 "specialization_details": " · ".join(
+                     f"{text} ({label})" if len(r["fees"]) > 1 and label else text for label, text in r["fees"])}
+                for r in rows
+            ]
+        elif not payload.get("specialization"):
+            names = _specialization_names_from_list(section_map)
+            if names:
+                payload["specialization"] = [{"specialization_name": n} for n in names]
+        if payload.get("specialization"):
+            enrichment_log.append({"field_key": "specialization", "status": "enriched", "source": "derive:specialization_table"})
+        fee_range = _fee_range_text(all_fees)
+        if fee_range:
+            payload["course_amount_range"] = fee_range
+            enrichment_log.append({"field_key": "course_amount_range", "status": "enriched", "source": "derive:specialization_table"})
+            if not re.search(r"\d", str(payload.get("total_fee") or "")):
+                payload["total_fee"] = fee_range
+        return
+
+    if page_type == "specialization" and rows:
+        by_name = {r["name"].lower(): r for r in rows}
+
+        def fee_for(name: str) -> str | None:
+            key = (name or "").lower().strip()
+            match = by_name.get(key) or next((r for k, r in by_name.items() if key and (key in k or k in key)), None)
+            return match["fees"][0][1] if match else None
+
+        others = payload.get("other_specs")
+        if isinstance(others, list):
+            for row in others:
+                if isinstance(row, dict) and not row.get("other_spec_fee"):
+                    fee = fee_for(row.get("other_spec_name"))
+                    if fee:
+                        row["other_spec_fee"] = fee
+        if not re.search(r"\d", str(payload.get("total_fee") or "")):
+            own = fee_for(str(payload.get("spec_name") or ""))
+            if own:
+                payload["total_fee"] = own
+        enrichment_log.append({"field_key": "other_specs", "status": "enriched", "source": "derive:specialization_table"})
+
+
 def enrich_payload(
     payload: dict[str, Any],
     section_map: dict[str, dict[str, Any]],
@@ -533,6 +664,7 @@ def enrich_payload(
     # ── Additional enrichment rules (non-stat) ──
     _enrich_course_name(payload, section_map, filename, page_type, enrichment_log)
     _fill_specializations_from_fees(payload, enrichment_log)
+    _derive_specialization_fees(payload, section_map, page_type, enrichment_log)
     _derive_stats(payload, enrichment_log)
     _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
     _derive_academic_years(payload, page_type, enrichment_log)

@@ -17,7 +17,7 @@ SHORT_OK_FIELDS = {
     'university_name', 'university_full_name', 'established_year',
     'naac_grade', 'ugc_approved', 'ugc_status', 'mode_of_learning', 'mode',
     'starting_fee', 'total_fee', 'num_programs', 'num_specializations',
-    'duration', 'validity', 'emi_amount', 'admission_fee_note',
+    'duration', 'validity', 'emi_amount', 'admission_fee_note', 'course_amount_range',
     'programs_intro', 'specializations_intro', 'eligibility_summary',
     'certificate_description', 'faculty_intro',
     'seo_title', 'meta_description', 'hero_description',

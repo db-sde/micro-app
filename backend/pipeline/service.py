@@ -32,7 +32,7 @@ from pipeline.embedder import match_headings_to_fields, initialize_field_index
 from pipeline.extractor import extract_field, confirm_mapping, resolve_ambiguous
 from pipeline.enricher import enrich_payload
 from pipeline.validator import validate_payload
-from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text
+from pipeline.kv_parser import looks_like_kv_section, parse_kv_section, flatten_section_to_text, kv_line_coverage
 from pipeline.classifier import classify_heading
 from pipeline.formatter import build_json_output
 from acf.fields import get_field_type, get_valid_field_keys
@@ -205,8 +205,12 @@ def run_extraction_pipeline(
         if not kv_fields:
             continue
 
-        # Only remove from section_map if we extracted ≥ 1 field
-        kv_headings_to_remove.append(heading)
+        # Only hand the whole section to the KV pass when it really is a
+        # key/value block. A mixed section (e.g. a specialization fee table
+        # with one line that happens to match a pattern) stays in normal
+        # extraction too; removing it used to drop every unrecognised line.
+        if kv_line_coverage(combined_text) >= 0.6:
+            kv_headings_to_remove.append(heading)
         for kv in kv_fields:
             fkey = kv["field_key"]
             # Don't overwrite a value that came from a more specific section
