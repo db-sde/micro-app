@@ -117,3 +117,24 @@ def test_eligibility_summary_is_a_whole_sentence():
     rows = [{"eligibility_title": "Bachelor's Degree", "eligibility_description":
              "Must have a bachelor's degree from a UGC-recognized university. Final-year students may apply."}]
     assert summarize_eligibility(rows) == "Must have a bachelor's degree from a UGC-recognized university."
+
+
+def test_repeated_plan_names_get_their_option_and_lowest_total_wins():
+    # Shoolini BBA: a "with / without Pay After Placement" two-column table.
+    plans = [
+        {"plan_name": "Semester Plan", "plan_amount": "INR 15,000 /-", "plan_total": "Pay After Placement Option"},
+        {"plan_name": "Semester Plan", "plan_amount": "INR 16,000 /-", "plan_total": "Without Pay After Placement Option"},
+        {"plan_name": "Pay After Placement", "plan_amount": "INR 22,500 /-", "plan_total": "Pay After Placement Option"},
+        {"plan_name": "Total Fee", "plan_amount": "INR 1,12,500 /-", "plan_total": "Pay After Placement Option"},
+        {"plan_name": "Total Fee", "plan_amount": "INR 96,000 /-", "plan_total": "Without Pay After Placement Option"},
+    ]
+    out = polish({"fee_plans": plans})
+    assert [r["plan_name"] for r in out["fee_plans"]] == [
+        "Semester Plan (Pay After Placement Option)",
+        "Semester Plan (Without Pay After Placement Option)",
+        "Pay After Placement",
+        "Total Fee (Pay After Placement Option)",
+        "Total Fee (Without Pay After Placement Option)",
+    ]
+    assert out["total_fee"] == "INR 96,000 /-"
+    assert plans[0]["plan_name"] == "Semester Plan"  # the stored payload isn't changed

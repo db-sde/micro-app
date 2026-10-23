@@ -419,14 +419,30 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
     if isinstance(plans, list):
         # EMI has its own field (emi_amount); as a "plan" it showed up as a
         # fee card.
-        kept = [r for r in plans if isinstance(r, dict) and re.search(r"\d", str(r.get("plan_amount") or ""))
+        kept = [dict(r) for r in plans if isinstance(r, dict) and re.search(r"\d", str(r.get("plan_amount") or ""))
                 and "emi" not in str(r.get("plan_name") or "").lower().split()]
+        _label_repeated_plans(kept)
         acf["fee_plans"] = kept or None
-        total_row = next((r for r in kept if "total" in str(r.get("plan_name") or "").lower()), None)
-        if total_row:
-            acf["total_fee"] = total_row["plan_amount"]
+        totals = [r for r in kept if "total" in str(r.get("plan_name") or "").lower()]
+        if totals:
+            # Several totals (e.g. with / without Pay After Placement): the
+            # page's single fee is the lowest, like "Best Fee".
+            from pipeline.enricher import _amount_value
+            acf["total_fee"] = min(totals, key=lambda r: _amount_value(str(r["plan_amount"])) or 0)["plan_amount"]
 
     return acf
+
+
+def _label_repeated_plans(plans: list[dict[str, Any]]) -> None:
+    """Two-column fee tables ("with" / "without Pay After Placement") came out
+    as two cards both called "Semester Plan". The column is kept in
+    plan_total, so add it to the name: "Semester Plan (Without Pay After
+    Placement Option)"."""
+    names = [str(r.get("plan_name") or "").strip().lower() for r in plans]
+    for row, name in zip(plans, names):
+        option = str(row.get("plan_total") or "").strip()
+        if names.count(name) > 1 and option and not re.search(r"\d", option) and len(option) <= 60:
+            row["plan_name"] = f"{str(row.get('plan_name')).strip()} ({option})"
 
 
 _PARTNER_FIELD = {"course": "top_hiring_partners_course", "specialization": "hiring_partners_specialization"}

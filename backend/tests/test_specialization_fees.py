@@ -102,3 +102,34 @@ def test_kv_coverage_separates_quick_facts_from_mixed_sections():
     mixed = ("AI FOR HUMAN RESOURCES : 1,96,000/-\nData Science : 1,80,000/-\nFintech : 1,70,000/-\n"
              "Cloud Computing : 1,90,000/-\nAICTE approved program")
     assert kv_line_coverage(mixed) < 0.6
+
+
+SHARED_FEE = {
+    "mba fee structure": table_section([
+        {"fee_plan": "With Pay After Placement (PAP)", "amount": "INR 1,58,000", "specializations": "All Specializations"},
+        {"fee_plan": "Without Pay After Placement", "amount": "INR 1,30,000", "specializations": "All Specializations"},
+    ]),
+}
+
+
+def test_all_specializations_fee_fills_every_other_spec_with_the_lowest_fee():
+    payload = {"spec_name": "Retail Management", "total_fee": "INR 1,30,000 /-",
+               "other_specs": [{"other_spec_name": "Marketing Management"}, {"other_spec_name": "Digital Marketing"}]}
+    _derive_specialization_fees(payload, SHARED_FEE, "specialization", [])
+    assert [r["other_spec_fee"] for r in payload["other_specs"]] == ["INR 1,30,000", "INR 1,30,000"]
+    assert payload["total_fee"] == "INR 1,30,000 /-"
+
+
+def test_all_specializations_row_is_not_listed_as_a_specialization_on_a_course():
+    payload = {"total_fee": "INR 1,30,000 /-"}
+    _derive_specialization_fees(payload, SHARED_FEE, "course", [])
+    assert "specialization" not in payload
+    assert "course_amount_range" not in payload
+
+
+def test_named_rows_still_win_over_a_shared_row():
+    sm = {**SHOOLINI, **SHARED_FEE}
+    payload = {"spec_name": "Retail Management",
+               "other_specs": [{"other_spec_name": "Marketing Management"}, {"other_spec_name": "Banking"}]}
+    _derive_specialization_fees(payload, sm, "specialization", [])
+    assert [r["other_spec_fee"] for r in payload["other_specs"]] == ["INR 1,50,000 /-", "INR 1,30,000"]

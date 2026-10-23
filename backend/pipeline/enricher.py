@@ -440,6 +440,9 @@ def _fee_column_label(key: str) -> str:
     return tail.replace("_", " ").strip()
 
 
+_CATCH_ALL_RE = re.compile(r"^\s*all\b(\s+(the\s+)?speciali[sz]ations?)?\s*$", re.I)
+
+
 def collect_specialization_fees(section_map: dict[str, Any]) -> list[dict[str, Any]]:
     """Rows of {name, fees: [(column_label, text)]} from specialization-wise
     fee tables (a column whose header mentions "specialization" plus one or
@@ -465,7 +468,13 @@ def collect_specialization_fees(section_map: dict[str, Any]) -> list[dict[str, A
                     text = _strip_html(str(value or "")).strip()
                     if key != name_key and _FEE_AMOUNT_RE.search(text):
                         fees.append((_fee_column_label(key), text))
-                if fees:
+                if not fees:
+                    continue
+                if _CATCH_ALL_RE.match(name):
+                    # "All Specializations": one fee for every specialization,
+                    # often one row per payment option — keep them all.
+                    found.setdefault("*", {"name": name, "fees": [], "catch_all": True})["fees"].extend(fees)
+                else:
                     found.setdefault(name.lower(), {"name": name, "fees": fees})
     return list(found.values())
 
@@ -506,8 +515,12 @@ def _derive_specialization_fees(
     specialization-wise fee table. Those rows previously had nowhere to go:
     courses whose fee varies by specialization showed an empty fee section
     and "Specializations: 0 rows"."""
-    rows = collect_specialization_fees(section_map)
+    found = collect_specialization_fees(section_map)
+    rows = [r for r in found if not r.get("catch_all")]
+    # The range is for fees that differ by specialization, so a shared
+    # "All Specializations" fee isn't part of it.
     all_fees = [text for r in rows for _, text in r["fees"]]
+    catch_all = next((r for r in found if r.get("catch_all")), None)
 
     if page_type == "course":
         if rows:
@@ -531,13 +544,15 @@ def _derive_specialization_fees(
                 payload["total_fee"] = fee_range
         return
 
-    if page_type == "specialization" and rows:
+    if page_type == "specialization" and found:
         by_name = {r["name"].lower(): r for r in rows}
+        # The lowest of the shared fees, matching the page's "Best Fee".
+        shared = min((t for _, t in catch_all["fees"]), key=lambda t: _amount_value(t) or 0) if catch_all else None
 
         def fee_for(name: str) -> str | None:
             key = (name or "").lower().strip()
             match = by_name.get(key) or next((r for k, r in by_name.items() if key and (key in k or k in key)), None)
-            return match["fees"][0][1] if match else None
+            return match["fees"][0][1] if match else shared
 
         others = payload.get("other_specs")
         if isinstance(others, list):
