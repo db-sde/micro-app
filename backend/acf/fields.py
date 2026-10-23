@@ -210,6 +210,9 @@ ACF_FIELDS = {
          'sub_fields': [{'key': 'plan_name', 'type': TEXT}, {'key': 'plan_amount', 'type': TEXT}, {'key': 'plan_total', 'type': TEXT}]},
         {'key': 'other_specs',          'type': JSON_ARRAY, 'embed': 'other specializations explore related alternatives list',
          'sub_fields': [{'key': 'other_spec_name', 'type': TEXT}, {'key': 'other_spec_fee', 'type': TEXT}]},
+        # Paragraph above the job-roles table (WordPress jobs_content). Taken
+        # from the section's intro text by the enricher; previously dropped.
+        {'key': 'jobs_content',         'type': TEXTAREA, 'embed': 'job roles career opportunities intro paragraph'},
         {'key': 'job_profiles',         'type': JSON_ARRAY, 'embed': 'job profiles roles career opportunities average salary',
          'sub_fields': [{'key': 'job_title', 'type': TEXT}, {'key': 'avg_salary', 'type': TEXT}]},
         {'key': 'reviews',              'type': JSON_ARRAY, 'embed': 'student reviews testimonials feedback ratings opinions',

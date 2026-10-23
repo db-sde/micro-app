@@ -553,6 +553,42 @@ def _derive_specialization_fees(
         enrichment_log.append({"field_key": "other_specs", "status": "enriched", "source": "derive:specialization_table"})
 
 
+def _derive_jobs_intro(
+    payload: dict[str, Any],
+    section_map: dict[str, Any],
+    page_type: str,
+    enrichment_log: list[dict[str, str]],
+) -> None:
+    """The paragraph above a job-roles table becomes jobs_content
+    (specialization pages). Extraction kept only the table rows, so the
+    paragraph never reached WordPress."""
+    if page_type != "specialization" or payload.get("jobs_content"):
+        return
+    for heading, section in (section_map or {}).items():
+        if heading.startswith("__") or not isinstance(section, dict):
+            continue
+        content = section.get("content")
+        if not isinstance(content, dict) or not content.get("intro_text"):
+            continue
+        first_rows = []
+        for table in content.get("tables") or []:
+            data = (table or {}).get("data") if isinstance(table, dict) else None
+            if isinstance(data, list) and data:
+                first_rows.append(data[0])
+            elif isinstance(data, dict):
+                first_rows.append(data)
+        has_job_table = any(isinstance(r, dict) and any("job" in k.lower() for k in r)
+                            and any("salar" in k.lower() for k in r) for r in first_rows)
+        if not (has_job_table or "job" in heading.lower()):
+            continue
+        paras = [_strip_html(p).strip() for p in re.findall(r"<p[^>]*>(.*?)</p>", content["intro_text"], re.S | re.I)]
+        text = "\n\n".join(p for p in paras if p) or _strip_html(content["intro_text"]).strip()
+        if text:
+            payload["jobs_content"] = re.sub(r"[ \t]+", " ", text)
+            enrichment_log.append({"field_key": "jobs_content", "status": "enriched", "source": "derive:job_section_intro"})
+            return
+
+
 def enrich_payload(
     payload: dict[str, Any],
     section_map: dict[str, dict[str, Any]],
@@ -665,6 +701,7 @@ def enrich_payload(
     _enrich_course_name(payload, section_map, filename, page_type, enrichment_log)
     _fill_specializations_from_fees(payload, enrichment_log)
     _derive_specialization_fees(payload, section_map, page_type, enrichment_log)
+    _derive_jobs_intro(payload, section_map, page_type, enrichment_log)
     _derive_stats(payload, enrichment_log)
     _enrich_course_stats(payload, section_map, filename, page_type, enrichment_log)
     _derive_academic_years(payload, page_type, enrichment_log)

@@ -429,6 +429,75 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
     return acf
 
 
+_PARTNER_FIELD = {"course": "top_hiring_partners_course", "specialization": "hiring_partners_specialization"}
+_PARTNER_LEAD_RE = re.compile(r"\b(hiring|recruit\w*|partner\w*|compan\w*|corporate\w*|employer\w*|organi[sz]ations?|alumni)\b", re.I)
+
+
+def _clean_partner(name: str) -> str:
+    import html as _html
+    return re.sub(r",?\s*etc\.?$", "", _html.unescape(_plain(name)), flags=re.I).strip(" .,;")
+
+
+def _looks_like_company(item: str) -> bool:
+    item = item.strip()
+    if re.search(r",\s*etc\.?$", item, re.I):
+        return True
+    return 1 <= len(item.split()) <= 5 and not item.endswith((".", ":"))
+
+
+def _placement_partners(html: str) -> tuple[list[str], str]:
+    """(partner names, placement_content with the names as a real list).
+
+    Handles the two ways documents write them: one company per line after a
+    lead-in ("Some of the major hiring partners ... are:"), or inline in a
+    sentence ("... include Infosys, Honeywell, Hitachi, etc."). A list of
+    services after a lead-in ("Professional resumes.") is not partners.
+    """
+    items = [b[1] for b in re.findall(r"<(p|li)[^>]*>(.*?)</\1>", html or "", re.I | re.S)]
+    for i, item in enumerate(items):
+        text = _plain(item)
+        if not (text.endswith(":") and _PARTNER_LEAD_RE.search(text)):
+            continue
+        names = []
+        for following in items[i + 1:]:
+            if not _looks_like_company(_plain(following)):
+                break
+            names.append(_clean_partner(following))
+        names = [n for n in names if n]
+        if len(names) >= 2:
+            listed = "".join(f"<li>{_escape_html(n)}</li>" for n in names)
+            head = "".join(f"<p>{x}</p>" for x in items[: i + 1])
+            tail = "".join(f"<p>{x}</p>" for x in items[i + 1 + len(names):])
+            return names, f"{head}<ul>{listed}</ul>{tail}"
+    for item in items:
+        text = _plain(item)
+        if not _PARTNER_LEAD_RE.search(text):
+            continue
+        m = re.search(r"\b(?:include|includes|including|are|like|such as)\b:?\s+(.+?)(?:,?\s*etc\.?|\.)\s*$", text, re.I)
+        if not m:
+            m = re.search(r"\b(?:include|includes|including|such as)\b:?\s+(.+?)(?:,?\s*etc\.?)", text, re.I)
+        if m:
+            names = [_clean_partner(n) for n in re.split(r",\s*|\s+and\s+", m.group(1))]
+            names = [n for n in names if n and len(n.split()) <= 5]
+            if len(names) >= 3:
+                return names, html
+    return [], html
+
+
+def _placement_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
+    """Hiring partners go to WordPress's dedicated field, which was never
+    filled, so the placement box showed only its intro paragraph."""
+    target = _PARTNER_FIELD.get(page_type)
+    html = acf.get("placement_content")
+    if not target or not isinstance(html, str) or not html.strip():
+        return {}
+    names, rewritten = _placement_partners(html)
+    if not names:
+        return {}
+    acf["placement_content"] = rewritten
+    return {target: ", ".join(names)}
+
+
 def _syllabus_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
     """WordPress shows the syllabus intro paragraph from its own
     *_syllabus_description field, which was never sent, so the paragraph
@@ -1073,6 +1142,7 @@ def publish_payload(
 
     acf_fields = _polish_for_wordpress(acf_fields, page_type)
     syllabus_extras = _syllabus_extras(acf_fields, page_type)
+    syllabus_extras.update(_placement_extras(acf_fields, page_type))
 
     # hero_image has no ACF field on any page type — it's handled as the
     # native WordPress Featured Image instead (see below), never sent
