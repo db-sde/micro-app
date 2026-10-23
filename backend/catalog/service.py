@@ -41,7 +41,14 @@ def lock(db):
 def bind_site(db, config):
     binding = db.get(CatalogLock, 1)
     if binding.site and (binding.site != config.site or binding.destination != config.base_url):
-        raise SyncError("Catalog is bound to another WordPress site/chatbot origin. Restore configuration; do not combine sites.")
+        # The binding protects version history already sent to one chatbot
+        # for one WordPress site. If nothing has ever been queued there is no
+        # history to protect: the idle sender binds on every tick, so a
+        # briefly mistyped CHATBOT_BASE_URL used to lock the parser to the
+        # wrong origin permanently. Rebind in that case; refuse once real
+        # events exist.
+        if db.scalar(select(CatalogEvent.event_id).limit(1)) is not None:
+            raise SyncError("Catalog is bound to another WordPress site/chatbot origin. Restore configuration; do not combine sites.")
     binding.site, binding.destination = config.site, config.base_url
 
 

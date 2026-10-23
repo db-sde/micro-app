@@ -522,3 +522,32 @@ def test_startup_migration_and_sender_shutdown_are_isolated(factory, monkeypatch
         sender = app.state.catalog_worker
         assert sender.thread.is_alive()
     assert sender.stop.is_set() and not sender.thread.is_alive()
+
+
+def _bind_to(factory, site, destination):
+    with factory() as db:
+        binding = db.get(CatalogLock, 1)
+        binding.site, binding.destination = site, destination
+        db.commit()
+
+
+def test_idle_binding_to_a_wrong_origin_heals_when_nothing_was_ever_sent(factory, api, monkeypatch):
+    """Production regression: the idle sender bound itself to a briefly
+    mistyped CHATBOT_BASE_URL, and after correcting it every publish failed
+    with "bound to another ... origin" although no event had ever been sent."""
+    _bind_to(factory, "https://degreebaba.com", "https://wrong-chatbot.test")
+    upload_id = add_upload(factory)
+    body = publish(api, monkeypatch, upload_id)
+    assert body["catalog_sync"]["status"] == "queued", body["catalog_sync"]
+    with factory() as db:
+        binding = db.get(CatalogLock, 1)
+        assert binding.destination == "https://chatbot.test"
+
+
+def test_binding_still_refuses_to_switch_once_events_exist(factory, api, monkeypatch):
+    """Real history must never silently move to another chatbot or site."""
+    upload_id = add_upload(factory)
+    assert publish(api, monkeypatch, upload_id)["catalog_sync"]["status"] == "queued"
+    _bind_to(factory, "https://degreebaba.com", "https://other-chatbot.test")
+    with factory() as db, pytest.raises(SyncError, match="bound to another"):
+        service.bind_site(db, settings())
