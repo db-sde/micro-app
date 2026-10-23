@@ -1,0 +1,384 @@
+{
+ "source": "OPTIONS https://degreebaba.demo-nexevo.in/wp-json/wp/v2/university",
+ "fetched_at": "2026-10-23",
+ "acf": {
+  "about_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "about_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "accreditations": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "body_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "body_descriptor": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "body_detail": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "accreditations_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_fee_note": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_steps": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "download_brochure_university": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "emi_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "emi_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "emi_interest_rate_value": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "established_year": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "exam_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "exam_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "examination_cards": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "exam_card_title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "exam_card_description": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "facts_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "facts_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "faculty_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "faculty_intro": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "faculty_members": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "member_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "member_designation": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "faqs": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "question": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "answer": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "faqs_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "hero_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "meta_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "mode_of_learning": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "naac_grade": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "nirf_rank": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "num_programs": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "partner_banks_names": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "placement_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "placement_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "placement_highlights": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "programs_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "programs_intro": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "programs_table": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "program_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "program_fee": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "program_eligibility": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "reviews": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "review_text": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reviewer_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reviewer_label": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "reviews_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "seo_title": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "starting_fee": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "ugc_approved": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "university_full_name": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "university_name": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "video_university": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "video_university_thumbnail": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "why_choose_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "why_choose_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  }
+ }
+}

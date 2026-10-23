@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import {
   TopBar, StepIndicator, StatusBadge, ConfidenceBar,
-  QualityScoreBadge, LoadingSpinner, showToast, Modal
+  QualityScoreBadge, LoadingSpinner, showToast, Modal, FlagBadge
 } from '../components/Components';
+import { sourceColors } from '../components/flags.mjs';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
 import CatalogSync from '../components/CatalogSync';
 
@@ -119,6 +120,7 @@ function buildFieldRows(uploadData) {
       heading_in_doc: mapping.heading_in_doc || '—',
       source: mapping.source || '—',
       confidence: mapping.confidence || 0,
+      flags: fr.flags || [],
       preview,
       charCount,
     };
@@ -868,6 +870,9 @@ export default function ValidationScreen() {
       {data?.processing_time_ms && (
         <div style={{ marginBottom: 16, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
           ⏱ Processed in {(data.processing_time_ms / 1000).toFixed(1)}s • Page type: <strong>{data.page_type}</strong>
+          {summary.flagged > 0 && (
+            <> • <strong>{summary.flagged}</strong> field{summary.flagged === 1 ? '' : 's'} flagged for checking (hover ⚠ for details)</>
+          )}
         </div>
       )}
 
@@ -917,19 +922,18 @@ export default function ValidationScreen() {
                     <td style={{ fontSize: '0.8125rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {field.heading_in_doc}
                     </td>
-                    <td><StatusBadge status={field.status} /></td>
+                    <td style={{ whiteSpace: 'nowrap' }}><StatusBadge status={field.status} /><FlagBadge flags={field.flags} /></td>
                     <td>
                       <span style={{
                         fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase',
                         letterSpacing: '0.05em', padding: '2px 8px',
                         borderRadius: 'var(--radius-full)',
-                        background: field.source === 'embedding' ? '#EDE9FE' : field.source === 'ai' ? '#DBEAFE' : '#F1F5F9',
-                        color: field.source === 'embedding' ? '#7C3AED' : field.source === 'ai' ? '#2563EB' : '#64748B',
+                        ...sourceColors(field.source),
                       }}>
                         {field.source}
                       </span>
                     </td>
-                    <td><ConfidenceBar value={Math.round(field.confidence * 100)} /></td>
+                    <td><ConfidenceBar value={field.confidence} /></td>
                     <td style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={field.preview}>
                       {field.preview}
                     </td>

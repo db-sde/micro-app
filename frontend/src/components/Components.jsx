@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
+import { flagBadge } from './flags.mjs';
 
 /* ═══════════════════════════════════════════════════════════════
    SHARED COMPONENTS — DegreeBaba Content Publisher
@@ -209,6 +210,20 @@ export function ConfidenceBar({ value = 0, showLabel = true }) {
         </span>
       )}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   FLAG BADGE — extraction v2 validation flags
+   (renders nothing for v1 uploads, which have none)
+   ═══════════════════════════════════════ */
+export function FlagBadge({ flags }) {
+  const badge = flagBadge(flags);
+  if (!badge) return null;
+  return (
+    <span className={`badge flag-badge flag-badge--${badge.level}`} title={badge.tooltip} aria-label={badge.tooltip}>
+      {badge.text}
+    </span>
   );
 }
 

@@ -73,7 +73,7 @@ export default function UploadScreen() {
       <div className="card" style={{ maxWidth: 680, margin: '0 auto' }}>
         <div className="card-body">
           {processing ? (
-            <LoadingSpinner message="Processing document… This may take a moment." />
+            <LoadingSpinner message="Reading the whole document… This usually takes 30–60 seconds." />
           ) : (
             <>
               <DropZone

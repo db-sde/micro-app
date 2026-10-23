@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-  TopBar, ConfidenceBar, LoadingSpinner, showToast
+  TopBar, ConfidenceBar, LoadingSpinner, showToast, FlagBadge
 } from '../components/Components';
+import { flagsByField } from '../components/flags.mjs';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -68,6 +69,7 @@ export default function MappingScreen() {
 
   const pageType = data?.page_type || 'university';
   const acfOptions = schemaByType[pageType] || [];
+  const flagsFor = flagsByField(data?.validation);
 
   const handleFieldChange = (index, newField) => {
     setMappings((prev) => {
@@ -195,7 +197,10 @@ export default function MappingScreen() {
                 ))}
               </select>
 
-              <ConfidenceBar value={Math.round(m.confidence * 100)} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <ConfidenceBar value={m.confidence} />
+                <FlagBadge flags={flagsFor[m.field_key]} />
+              </div>
             </div>
           );
         })}

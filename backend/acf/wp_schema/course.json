@@ -1,0 +1,545 @@
+{
+ "source": "OPTIONS https://degreebaba.demo-nexevo.in/wp-json/wp/v2/course",
+ "fetched_at": "2026-10-23",
+ "acf": {
+  "about_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "about_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "accreditations_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_fee_note": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "admission_steps": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "annual_plan_amount": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "best_price_value": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "category_page": {
+   "type": [
+    "integer",
+    "array",
+    "null"
+   ]
+  },
+  "certificate_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "certificate_image": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "course_academic_years": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "course_year_title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "course_semesters": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "sub_fields": {
+      "course_semester_title": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "course_semester_subjects": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "course_accreditations": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "course_body_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "course_body_descriptor": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "course_body_detail": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "course_amount_range": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "course_intake": {
+   "type": [
+    "string",
+    "null"
+   ],
+   "description": "A `Y-m-d H:i:s` formatted date string."
+  },
+  "course_syllabus_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "course_syllabus_section_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "download_brochure_course": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "duration": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "eligibility_content": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "eligibility_title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "eligibility_description": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "eligibility_icon": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    }
+   }
+  },
+  "eligibility_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "eligibility_summary": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "emi_amount": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "faqs": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "question": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "answer": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "faqs_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "fee_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "fee_plans": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "plan_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "plan_amount": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "hero_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "highlights": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "highlight_title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "highlight_description": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "highlights_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "highlights_section_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "job_profiles": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "job_title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "avg_salary": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "jobs_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "linked_university": {
+   "type": [
+    "integer",
+    "array",
+    "null"
+   ]
+  },
+  "meta_description": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "mode": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "naac_grade": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "nirf_rank_course": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "num_specializations": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "one-time_payment_amount": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "partner_banks_course": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "placement_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "placement_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "popularity_score": {
+   "type": [
+    "number",
+    "null"
+   ]
+  },
+  "program_duration": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "program_name": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "reviews": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "review_text": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reviewer_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reviewer_label": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "semester_plan_amount": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "seo_title": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "specialization": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "sub_fields": {
+    "specialization_name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "specialization_icon": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "specialization_details": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "specializations_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "specializations_intro": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "starting_fee": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "syllabus_content": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "syllabus_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "top_hiring_partners_course": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "total_fee": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "ugc_status": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "university_name": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "validity": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "video_course": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "video_course_thumbnail": {
+   "type": [
+    "integer",
+    "null"
+   ]
+  }
+ }
+}

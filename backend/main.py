@@ -108,14 +108,19 @@ async def startup_event():
     catalog_service.migrate(engine)
     logger.info("Database tables ready.")
 
-    logger.info("Initialising field embedding index …")
-    try:
-        initialize_field_index()
-    except Exception as exc:
-        logger.warning(
-            "Could not initialise field index (OpenAI key may be missing): %s",
-            exc,
-        )
+    # Only the v1 pipeline (rollback) routes headings by embeddings; v2 needs
+    # no index, so don't spend OpenAI calls building one at every boot. v1
+    # builds it itself on first use if it's ever switched back on.
+    from pipeline.service import extraction_pipeline
+    if extraction_pipeline() == "v1":
+        logger.info("Initialising field embedding index …")
+        try:
+            initialize_field_index()
+        except Exception as exc:
+            logger.warning(
+                "Could not initialise field index (OpenAI key may be missing): %s",
+                exc,
+            )
     app.state.catalog_worker = CatalogWorker(SessionLocal)
     app.state.catalog_worker.start()
     logger.info("Startup complete.")

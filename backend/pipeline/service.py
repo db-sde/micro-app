@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -147,6 +148,9 @@ def run_extraction_pipeline(
         ``validation``, ``field_mappings``, and ``processing_time_ms``.
     """
     t0 = time.time()
+
+    if extraction_pipeline() == "v2":
+        return _run_v2_pipeline(file_bytes, filename, forced_page_type, db, t0)
 
     # ── Step 1: Parse DOCX ──
     parser_output = parse_docx(file_bytes)
@@ -476,6 +480,54 @@ def run_extraction_pipeline(
     # ── Step 6.5: Format final payload ──
     validated_fields = [{"field_key": k, "value": v} for k, v in payload.items()]
     final_payload = build_json_output(validated_fields, filename, detected_type)
+
+    return _persist_and_respond(final_payload, mapping_records, validation, detected_type, filename, db, t0)
+
+
+def extraction_pipeline() -> str:
+    """EXTRACTION_PIPELINE setting, read on every call: "v2" (default) or
+    "v1" (the older per-field pipeline, kept only as a rollback)."""
+    value = os.getenv("EXTRACTION_PIPELINE", "v2").strip().lower()
+    return value if value in ("v1", "v2") else "v2"
+
+
+def _run_v2_pipeline(
+    file_bytes: bytes,
+    filename: str,
+    forced_page_type: str | None,
+    db: Session,
+    t0: float,
+) -> dict[str, Any]:
+    """Extraction v2 (pipeline/v2): same persistence and response shape as v1."""
+    from pipeline.v2.run import extra_report_fields, run_v2
+
+    result = run_v2(file_bytes, filename, forced_page_type)
+    validated_fields = [{"field_key": k, "value": v} for k, v in result.payload.items()]
+    final_payload = build_json_output(validated_fields, filename, result.page_type)
+    # Stored with the payload so every later re-validation (GET /upload,
+    # /confirm, PATCH /payload) keeps showing them.
+    final_payload["_meta"]["extraction"] = result.meta
+    final_payload["_meta"]["validation_flags"] = result.flags
+    final_payload["_meta"]["extra_fields"] = extra_report_fields(result.page_type)
+
+    validation = validate_payload(final_payload, result.page_type)
+    response = _persist_and_respond(final_payload, result.mapping_records, validation, result.page_type, filename, db, t0)
+    response["pipeline"] = "v2"
+    response["extraction"] = {k: result.meta[k] for k in ("model", "served_by", "parser", "usage", "cost_usd", "latency_ms", "notes")}
+    return response
+
+
+def _persist_and_respond(
+    final_payload: dict[str, Any],
+    mapping_records: list[dict[str, Any]],
+    validation: dict[str, Any],
+    detected_type: str,
+    filename: str,
+    db: Session,
+    t0: float,
+) -> dict[str, Any]:
+    """Save the upload and its field mappings; build the /upload response."""
+    quality_score = validation["summary"]["quality_score"]
 
     # ── Step 7: Persist ──
     upload = Upload(

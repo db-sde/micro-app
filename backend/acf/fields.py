@@ -277,6 +277,10 @@ def get_field_type(field_key: str, page_type: str) -> str:
     for f in ACF_FIELDS.get(page_type, []):
         if f['key'] == field_key:
             return f['type']
+    # v2-only fields (defined below); v1 never produces these keys.
+    for f in (*V2_PUBLISHED_FIELDS.get(page_type, []), *V2_UNPUBLISHED_FIELDS.get(page_type, [])):
+        if f['key'] == field_key:
+            return f['type']
     return 'text'
 
 def get_first_sub_field_key(field_key: str, page_type: str) -> str | None:
@@ -299,3 +303,54 @@ def get_image_field_keys(page_type: str) -> set:
 def get_file_field_keys(page_type: str) -> set:
     """Return the set of FILE-type field keys valid for a given page type."""
     return {f['key'] for f in ACF_FIELDS.get(page_type, []) if f['type'] == FILE}
+
+
+# ── Extraction v2 only (pipeline/v2) ─────────────────────────────────────
+# Kept apart from ACF_FIELDS so v1's tags, embeddings and validation are
+# unchanged.
+#
+# Live WordPress fields that v1 never sends. v2 fills them itself; the
+# publish filter accepts them (wordpress_client.publish_payload), and the
+# publish-time extras only fill these when they are still empty.
+V2_PUBLISHED_FIELDS: dict[str, list[dict]] = {
+    'university': [],
+    'course': [
+        {'key': 'course_syllabus_description',     'type': TEXTAREA},
+        {'key': 'course_syllabus_section_heading', 'type': TEXT},
+        {'key': 'top_hiring_partners_course',      'type': TEXT},
+    ],
+    'specialization': [
+        {'key': 'syllabus_description',           'type': TEXTAREA},
+        {'key': 'syllabus_section_heading',       'type': TEXT},
+        {'key': 'hiring_partners_specialization', 'type': TEXT},
+        {'key': 'examination_process',            'type': JSON_ARRAY,
+         'sub_fields': [{'key': 'exam_process_title', 'type': TEXT}, {'key': 'exam_process_description', 'type': TEXT}]},
+        {'key': 'specialization_lowest_emi_strats_from', 'type': TEXT},
+    ],
+}
+
+# Intro paragraphs that have no WordPress field yet. Extracted so the
+# content isn't lost; never published (the publish filter drops them).
+V2_UNPUBLISHED_FIELDS: dict[str, list[dict]] = {
+    'university': [
+        {'key': 'accreditations_intro', 'type': TEXTAREA},
+    ],
+    'course': [
+        {'key': 'eligibility_intro',    'type': TEXTAREA},
+        {'key': 'fee_intro',            'type': TEXTAREA},
+        {'key': 'accreditations_intro', 'type': TEXTAREA},
+        {'key': 'jobs_intro',           'type': TEXTAREA},
+    ],
+    'specialization': [
+        {'key': 'eligibility_intro',    'type': TEXTAREA},
+        {'key': 'fee_intro',            'type': TEXTAREA},
+    ],
+}
+
+
+def get_v2_published_keys(page_type: str) -> set:
+    return {f['key'] for f in V2_PUBLISHED_FIELDS.get(page_type, [])}
+
+
+def get_v2_unpublished_keys(page_type: str) -> set:
+    return {f['key'] for f in V2_UNPUBLISHED_FIELDS.get(page_type, [])}

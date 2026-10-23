@@ -52,7 +52,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, FILE, JSON_ARRAY, HTML
+from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, get_v2_published_keys, IMAGE, FILE, JSON_ARRAY, HTML
 
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
@@ -1138,7 +1138,8 @@ def publish_payload(
     # object with a generic "Invalid parameter(s): acf" 400, since ACF's
     # REST schema validation typically forbids additional properties. Drop
     # anything unrecognized here rather than let it break the whole publish.
-    valid_keys = get_valid_field_keys(page_type)
+    # Plus the live fields only extraction v2 fills (acf.fields.V2_PUBLISHED_FIELDS).
+    valid_keys = get_valid_field_keys(page_type) | get_v2_published_keys(page_type)
     acf_fields = {}
     dropped: list[str] = []
     for k, v in payload.items():

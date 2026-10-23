@@ -1747,3 +1747,14 @@ code, .font-mono {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
+
+/* ─── Extraction v2 validation flags ─── */
+.flag-badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  cursor: help;
+}
+.flag-badge--error   { background: var(--color-missing); color: var(--color-missing-text); }
+.flag-badge--warning { background: var(--color-warning-light); color: #92400E; }
+.flag-badge--info    { background: #F1F5F9; color: #64748B; }

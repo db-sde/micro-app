@@ -46,3 +46,5 @@ urllib3==2.5.0
 uvicorn==0.48.0
 vine==5.1.0
 wcwidth==0.7.0
+# Extraction v2: .docx -> Markdown (docx backend only; no torch/OCR models)
+docling-slim[format-docx]==2.142.1
