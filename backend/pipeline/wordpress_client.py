@@ -52,7 +52,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, FILE, JSON_ARRAY
+from acf.fields import get_valid_field_keys, get_field_type, get_first_sub_field_key, IMAGE, FILE, JSON_ARRAY, HTML
 
 load_dotenv()
 logger = logging.getLogger("degreebaba.wordpress")
@@ -303,6 +303,150 @@ def _fix_faculty_members(rows: Any) -> Any:
             row["member_designation"] = ", ".join(parts)
         fixed.append(row)
     return fixed
+
+
+# ── Publish-time content clean-up ───────────────────────────────────────────
+# Fixes that make the rendered WordPress page read correctly. They run on
+# every publish, so republishing an already-parsed upload repairs its page
+# without re-parsing the document.
+
+_PLACEHOLDER_RE = re.compile(r"^\s*(n/?a|na|nil|none|null|not available|not applicable|not mentioned|not specified|-+|—)\s*\.?\s*$", re.I)
+_LEADING_HEADING_RE = re.compile(r"^\s*<h[1-6][^>]*>.*?</h[1-6]>\s*", re.I | re.S)
+_MONEY_RE = re.compile(r"(₹|\binr\b|\brs\.?\s|\d[\d,]*\s*/-)", re.I)
+_STEP_RE = re.compile(r"^\s*(?:<strong>)?\s*step\s*\d+", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+_HEADING_LABELS = {
+    "accreditations_heading": "Accreditations", "fee_heading": "Fee Structure",
+    "eligibility_heading": "Eligibility Criteria", "admission_heading": "Admission Process",
+    "syllabus_heading": "Syllabus", "placement_heading": "Placement Partners",
+    "jobs_heading": "Job Roles & Salary", "faqs_heading": "FAQs", "about_heading": "About",
+    "highlights_heading": "Highlights", "specializations_heading": "Specializations",
+    "exam_heading": "Examination Process", "other_specs_heading": "Other Specializations",
+    "certificate_heading": "Certificate", "reviews_heading": "Reviews",
+}
+_SYLLABUS_TARGETS = {
+    "course": ("course_syllabus_description", "course_syllabus_section_heading"),
+    "specialization": ("syllabus_description", "syllabus_section_heading"),
+}
+
+
+def _plain(html: Any) -> str:
+    return re.sub(r"\s+", " ", _TAG_RE.sub(" ", str(html or ""))).strip()
+
+
+def _page_name(acf: dict[str, Any], page_type: str) -> str:
+    key = {"course": "program_name", "specialization": "spec_name"}.get(page_type, "university_name")
+    return str(acf.get(key) or acf.get("university_name") or "").strip()
+
+
+def _normalize_admission_steps(html: str) -> tuple[str, str | None]:
+    """Return (steps_html, extra_note).
+
+    * "Step 1. …" written as paragraphs becomes a real list, so the theme
+      shows numbered steps instead of none at all.
+    * Only the first list is the steps. Later lists ("Important
+      instructions") were numbered 7, 8, … as if they were steps; their text
+      is returned so it can become the note instead.
+    """
+    if "<li" not in html.lower():
+        paras = re.findall(r"<p[^>]*>(.*?)</p>", html, re.I | re.S)
+        steps = [p for p in paras if _STEP_RE.match(p)]
+        if len(steps) >= 2:
+            intro = "".join(f"<p>{p}</p>" for p in paras if p not in steps and paras.index(p) < paras.index(steps[0]))
+            items = "".join(f"<li>{p.strip()}</li>" for p in steps)
+            return intro + f"<ol>{items}</ol>", None
+        return html, None
+    first_close = re.search(r"</(ol|ul)>", html, re.I)
+    if not first_close:
+        return html, None
+    head, tail = html[: first_close.end()], html[first_close.end():]
+    extra = [_plain(li) for li in re.findall(r"<li[^>]*>(.*?)</li>", tail, re.I | re.S)]
+    extra = [e for e in extra if e]
+    if not extra:
+        return html, None
+    return head, " ".join(extra)
+
+
+def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]:
+    """Clean extracted values into what reads correctly on the page."""
+    # 1. Placeholders ("N/A", "NA", "-") would be shown verbatim.
+    for key, value in list(acf.items()):
+        if isinstance(value, str) and _PLACEHOLDER_RE.match(value):
+            acf[key] = None
+
+    # 2. Content that repeats its section heading at the top rendered the
+    #    heading twice ("Jain Online Examination process" + "Jain
+    #    Examination Process").
+    for key, value in list(acf.items()):
+        if isinstance(value, str) and get_field_type(key, page_type) == HTML and _LEADING_HEADING_RE.match(value):
+            stripped = _LEADING_HEADING_RE.sub("", value, count=1).strip()
+            if stripped:
+                acf[key] = stripped
+
+    # 3. Headings must look like headings, not a fee row or a sentence.
+    name = _page_name(acf, page_type)
+    for key, value in list(acf.items()):
+        if key.endswith("_heading") and isinstance(value, str) and (len(value) > 90 or _MONEY_RE.search(value)):
+            label = _HEADING_LABELS.get(key, key[: -len("_heading")].replace("_", " ").title())
+            acf[key] = f"{name} {label}".strip() if name else label
+
+    # 4. Admission steps, and a note that is not just one of the steps.
+    steps_html = acf.get("admission_steps")
+    extra_note = None
+    if isinstance(steps_html, str) and steps_html.strip():
+        acf["admission_steps"], extra_note = _normalize_admission_steps(steps_html)
+    note = acf.get("admission_fee_note")
+    if isinstance(note, str) and note.strip():
+        steps_text = _plain(acf.get("admission_steps")).lower()
+        note_text = _plain(note)
+        if _STEP_RE.match(note_text) or (len(note_text) > 15 and note_text.lower().rstrip(".") in steps_text):
+            acf["admission_fee_note"] = None
+    if not acf.get("admission_fee_note") and extra_note:
+        acf["admission_fee_note"] = extra_note
+
+    # 5. Eligibility note: the old derivation glued title+description and
+    #    cut it with "...".
+    summary = acf.get("eligibility_summary")
+    if isinstance(summary, str) and summary.rstrip().endswith("..."):
+        from pipeline.enricher import summarize_eligibility
+        acf["eligibility_summary"] = summarize_eligibility(acf.get("eligibility_content")) or None
+
+    # 6. Fees: rows without an amount ("Variable by specialization", null)
+    #    rendered as four "Variable by specialization" cards; a "Total" row
+    #    is the real total when total_fee picked up a single year.
+    plans = acf.get("fee_plans")
+    if isinstance(plans, list):
+        # EMI has its own field (emi_amount); as a "plan" it showed up as a
+        # fee card.
+        kept = [r for r in plans if isinstance(r, dict) and re.search(r"\d", str(r.get("plan_amount") or ""))
+                and "emi" not in str(r.get("plan_name") or "").lower().split()]
+        acf["fee_plans"] = kept or None
+        total_row = next((r for r in kept if "total" in str(r.get("plan_name") or "").lower()), None)
+        if total_row:
+            acf["total_fee"] = total_row["plan_amount"]
+
+    return acf
+
+
+def _syllabus_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
+    """WordPress shows the syllabus intro paragraph from its own
+    *_syllabus_description field, which was never sent, so the paragraph
+    above the year/semester accordion was always missing."""
+    targets = _SYLLABUS_TARGETS.get(page_type)
+    html = acf.get("syllabus_content")
+    if not targets or not isinstance(html, str) or not html.strip():
+        return {}
+    first_block = re.search(r"<h[3-4][^>]*>\s*(year|semester|sem)\b", html, re.I)
+    intro_html = html[: first_block.start()] if first_block else html
+    paras = [_plain(p) for p in re.findall(r"<p[^>]*>(.*?)</p>", intro_html, re.I | re.S)]
+    intro = "\n\n".join(p for p in paras if p) or _plain(intro_html)
+    out: dict[str, str] = {}
+    if intro:
+        out[targets[0]] = intro
+    if acf.get("syllabus_heading"):
+        out[targets[1]] = acf["syllabus_heading"]
+    return out
 
 
 def _remap_fee_plans(fee_plans: Any, page_type: str) -> dict[str, str]:
@@ -927,6 +1071,9 @@ def publish_payload(
                 page_type, key,
             )
 
+    acf_fields = _polish_for_wordpress(acf_fields, page_type)
+    syllabus_extras = _syllabus_extras(acf_fields, page_type)
+
     # hero_image has no ACF field on any page type — it's handled as the
     # native WordPress Featured Image instead (see below), never sent
     # inside "acf" at all.
@@ -1062,6 +1209,12 @@ def publish_payload(
 
     # Resolve real WordPress taxonomy terms (program, mode, level,
     # institution, discipline, approval_body) — see _derive_taxonomies.
+    # WordPress-only syllabus fields (see _syllabus_extras), added after the
+    # renames above since they have no internal field of their own.
+    for key, value in syllabus_extras.items():
+        if not acf_fields.get(key):
+            acf_fields[key] = value
+
     taxonomy_terms, taxonomy_warnings = _derive_taxonomies(payload, acf_fields, page_type)
 
     # Resolve linked_university / linked_course / category_page to real

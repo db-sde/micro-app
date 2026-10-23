@@ -237,3 +237,18 @@ def test_enrichment_is_logged_for_the_ui() -> None:
     _derive_academic_years(payload, "specialization", log)
     assert any(e["field_key"] == "academic_years" for e in log)
     assert all(e["source"].startswith("derive:") for e in log)
+
+
+def test_title_overrides_a_wrong_specialization_guess():
+    """Jain "MCA in DevOps": the embedding picked "Fintech & AI" from a fee table."""
+    from pipeline.enricher import _enrich_course_name
+    payload = {"spec_name": "Fintech & AI"}
+    _enrich_course_name(payload, {}, "Copy of Jain University Online MCA in DevOps.docx", "specialization", [])
+    assert payload["spec_name"] == "DevOps"
+
+
+def test_title_keeps_a_specialization_name_it_confirms():
+    from pipeline.enricher import _enrich_course_name
+    payload = {"spec_name": "Marketing Management"}
+    _enrich_course_name(payload, {}, "UPES Online MBA in Marketing Management.docx", "specialization", [])
+    assert payload["spec_name"] == "Marketing Management"

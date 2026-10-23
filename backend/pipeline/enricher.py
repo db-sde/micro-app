@@ -244,6 +244,53 @@ def clean_filename(filename: str) -> str:
     return name.strip()
 
 
+def summarize_eligibility(eligibility: Any, max_len: int = 220) -> str | None:
+    """One readable sentence for the eligibility note.
+
+    Uses the first requirement's description on its own. The old version
+    flattened title + description ("Educational Qualification Bachelor's
+    degree ...") and cut it at 120 characters with "...", so the published
+    note read as a broken fragment.
+    """
+    if isinstance(eligibility, list):
+        texts = []
+        for row in eligibility:
+            if isinstance(row, dict):
+                desc = _strip_html(str(row.get("eligibility_description") or "")).strip()
+                if desc:
+                    texts.append(desc)
+        text = texts[0] if texts else ""
+    else:
+        text = _strip_html(_flatten_value(eligibility or "")).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < 10:
+        return None
+    m = re.match(r"(.{10,%d}?[.!?])(\s|$)" % max_len, text)
+    if m:
+        return m.group(1).strip()
+    if len(text) <= max_len:
+        return text if text.endswith((".", "!", "?")) else text + "."
+    cut = text[:max_len].rsplit(" ", 1)[0].rstrip(",;:")
+    return cut + "."
+
+
+def specialization_from_title(filename: str) -> str | None:
+    """The specialization a document is about, from its title.
+
+    Specialization documents are titled "<University> Online <Degree> in
+    <Specialization>" ("Copy of Jain University Online MCA in DevOps").
+    That is far more reliable than an embedding match, which picked
+    "Fintech & AI" out of that document's fee table.
+    """
+    name = clean_filename(filename or "")
+    m = re.search(r"\bin\s+(.+)$", name, re.IGNORECASE)
+    if not m:
+        return None
+    spec = re.sub(r"\b(specialization|specialisation|program|programme|course|page)\b", "", m.group(1), flags=re.IGNORECASE)
+    spec = re.sub(r"\s{2,}", " ", spec).strip(" -_&,")
+    return spec if 2 <= len(spec) <= 80 else None
+
+
 def _enrich_course_name(
     payload: dict[str, Any],
     section_map: dict[str, dict[str, Any]],
@@ -271,6 +318,15 @@ def _enrich_course_name(
         candidate_fields = ["program_name"]
     else:  # specialization
         candidate_fields = ["spec_name"]
+
+    if page_type == "specialization":
+        from_title = specialization_from_title(filename)
+        current = str(payload.get("spec_name") or "")
+        # Keep a name the title confirms; replace a guess it contradicts.
+        if from_title and from_title.lower() not in current.lower():
+            payload["spec_name"] = from_title
+            enrichment_log.append({"field_key": "spec_name", "status": "enriched", "source": f"title:{filename}"})
+            logger.info("ENRICHED: spec_name = %r (from title; was %r)", from_title, current)
 
     for field_key in candidate_fields:
         if payload.get(field_key) is not None:
@@ -944,18 +1000,11 @@ def _enrich_course_stats(
     # objects (matches WordPress's real repeater field) — flatten before
     # deriving a plain-text summary, same as any other structured value.
     if not payload.get("eligibility_summary"):
-        elig = payload.get("eligibility_content", "")
-        if elig:
-            flat = _strip_html(_flatten_value(elig)).strip()
-            # First sentence or first 120 chars
-            m = re.match(r"([^.!?]{20,120}[.!?])", flat)
-            if m:
-                payload["eligibility_summary"] = m.group(1).strip()
-            elif len(flat) > 20:
-                payload["eligibility_summary"] = flat[:120].rstrip() + "..."
-            if payload.get("eligibility_summary"):
-                enrichment_log.append({"field_key": "eligibility_summary", "status": "enriched", "source": "derive:eligibility_content"})
-                logger.info("ENRICHED: eligibility_summary = %r", payload["eligibility_summary"][:80])
+        summary = summarize_eligibility(payload.get("eligibility_content"))
+        if summary:
+            payload["eligibility_summary"] = summary
+            enrichment_log.append({"field_key": "eligibility_summary", "status": "enriched", "source": "derive:eligibility_content"})
+            logger.info("ENRICHED: eligibility_summary = %r", summary[:80])
 
 
 def _derive_academic_years(

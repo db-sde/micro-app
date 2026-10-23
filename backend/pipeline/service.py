@@ -386,7 +386,7 @@ def run_extraction_pipeline(
         "about_heading": "about_content",
         "why_choose_heading": "why_choose_content",
         "facts_heading": "facts",
-        "accreditations_heading": "accreditations",
+        "accreditations_heading": ("accreditations", "course_accreditations"),
         "programs_heading": "programs_table",
         "admission_heading": "admission_steps",
         "emi_heading": "emi_content",
@@ -405,17 +405,27 @@ def run_extraction_pipeline(
         "other_specs_heading": "other_specs",
     }
     
-    # Create a quick lookup of field_key -> heading_in_doc from mapping_records
+    # Create a quick lookup of field_key -> heading_in_doc from mapping_records.
+    # KV records are excluded: their heading_in_doc is just whichever section
+    # happened to contain a "Key: value" line (e.g. a fee-table row that a
+    # loose pattern read as an accreditation), not that field's own heading.
     content_source_map = {
-        r["field_key"]: r["heading_in_doc"] 
-        for r in mapping_records 
-        if r["status"] == "mapped"
+        r["field_key"]: r["heading_in_doc"]
+        for r in mapping_records
+        if r["status"] == "mapped" and r.get("source") != "KV"
     }
+    valid_for_type = get_valid_field_keys(detected_type)
 
-    for heading_field, content_field in HEADING_PAIRS.items():
-        # Check if this heading field is actually valid for the current page_type
-        if get_field_type(heading_field, detected_type) == 'text':
-            # If the paired content field was mapped successfully, steal its heading
+    for heading_field, content_fields in HEADING_PAIRS.items():
+        # A heading the document already set (e.g. an explicit
+        # [accreditations_heading] tag) wins — this step only fills gaps.
+        # It used to overwrite them, which is how a course's accreditations
+        # heading became "AI FOR HUMAN RESOURCES : 1,96,000/-".
+        if heading_field not in valid_for_type or payload.get(heading_field):
+            continue
+        candidates = (content_fields,) if isinstance(content_fields, str) else content_fields
+        content_field = next((c for c in candidates if c in valid_for_type), None)
+        if content_field:
             if content_field in content_source_map and payload.get(content_field) is not None:
                 doc_heading_key = content_source_map[content_field]
                 
