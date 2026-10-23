@@ -23,7 +23,6 @@ from typing import Any, Callable
 
 # USD per million tokens: input, output, cache read, cache write.
 PRICES: dict[str, tuple[float, float, float, float]] = {
-    "claude-opus-5-5": (4.00, 20.00, 0.20, 5.00),
     "claude-sonnet-5-5": (2.00, 10.00, 0.20, 2.50),
     "claude-haiku-4-5-20251001": (1.00, 5.00, 0.10, 1.25),
     "claude-haiku-4-5": (1.00, 5.00, 0.10, 1.25),
@@ -40,7 +39,7 @@ class BudgetExceeded(RuntimeError):
 
 
 def price(model: str, usage: dict[str, int]) -> float:
-    p_in, p_out, p_read, p_write = PRICES.get(model, PRICES["claude-opus-5-5"])
+    p_in, p_out, p_read, p_write = PRICES.get(model, PRICES["claude-sonnet-5-5"])
     return (usage.get("input_tokens", 0) * p_in + usage.get("output_tokens", 0) * p_out
             + usage.get("cache_read_input_tokens", 0) * p_read
             + usage.get("cache_creation_input_tokens", 0) * p_write) / 1_000_000

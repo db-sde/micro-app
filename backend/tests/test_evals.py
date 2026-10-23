@@ -150,13 +150,13 @@ def test_responses_are_cached_by_exact_request(tmp_path) -> None:
     ledger = Ledger()
     client = CachingAnthropic(lambda: real, ResponseCache(tmp_path), ledger)
     for _ in range(2):
-        with ledger.scoped("v2-opus", "c1"):
-            with client.beta.messages.stream(model="claude-opus-5-5", messages=[{"role": "user", "content": "a"}]) as s:
+        with ledger.scoped("v2-sonnet", "c1"):
+            with client.beta.messages.stream(model="claude-sonnet-5-5", messages=[{"role": "user", "content": "a"}]) as s:
                 assert json.loads(s.get_final_message().content[-1].text) == {"ok": True}
     assert len(real.calls) == 1
     assert (ledger.cache_misses, ledger.cache_hits) == (1, 1)
-    assert ledger.spent_usd == pytest.approx((1000 * 4 + 100 * 20) / 1e6)
-    assert ledger.runs[("v2-opus", "c1")]["cost_usd"] == pytest.approx(2 * (1000 * 4 + 100 * 20) / 1e6)  # nominal
+    assert ledger.spent_usd == pytest.approx((1000 * 2 + 100 * 10) / 1e6)
+    assert ledger.runs[("v2-sonnet", "c1")]["cost_usd"] == pytest.approx(2 * (1000 * 2 + 100 * 10) / 1e6)  # nominal
 
 
 def test_offline_and_budget_refuse_new_calls(tmp_path) -> None:
@@ -164,7 +164,7 @@ def test_offline_and_budget_refuse_new_calls(tmp_path) -> None:
     offline = Ledger(offline=True)
     client = CachingAnthropic(lambda: real, ResponseCache(tmp_path), offline)
     with pytest.raises(OfflineMiss):
-        client.messages.create(model="claude-opus-5-5", messages=[])
+        client.messages.create(model="claude-sonnet-5-5", messages=[])
     assert offline.blocked and real.calls == []
     capped = Ledger(budget_usd=0.0)
     capped.spent_usd = 0.01
@@ -261,16 +261,15 @@ def test_full_run_then_free_offline_rerun(eval_dirs) -> None:
     assert _run(["--yes", "--budget", "5"], eval_dirs) == 0
     [first] = list(eval_dirs["reports_dir"].iterdir())
     results = json.loads((first / "results.json").read_text())
-    assert set(results["variants"]) == {"v1/published", "v1/raw", "v2-opus/raw", "v2-opus/published",
-                                        "v2-sonnet/raw", "v2-sonnet/published"}
-    v2 = results["variants"]["v2-opus/raw"]["cases"][0]
+    assert set(results["variants"]) == {"v1/published", "v1/raw", "v2-sonnet/raw", "v2-sonnet/published"}
+    v2 = results["variants"]["v2-sonnet/raw"]["cases"][0]
     fields = {f["field"]: f for f in v2["fields"]}
     assert fields["admission_steps"]["passed"] and fields["admission_fee_note"]["passed"]
     assert fields["course_amount_range"]["passed"] and fields["post_title"]["passed"]
     assert all(c["passed"] for c in v2["checks"])
     assert v2["cost_usd"] > 0 and results["spent_usd"] > 0
     report = (first / "report.md").read_text()
-    assert "## Summary" in report and "v2-opus/raw" in report and "## Stress checks" in report
+    assert "## Summary" in report and "v2-sonnet/raw" in report and "## Stress checks" in report
 
     # same documents, prompts and models: everything comes from the cache
     import time
@@ -279,7 +278,7 @@ def test_full_run_then_free_offline_rerun(eval_dirs) -> None:
     second = sorted(eval_dirs["reports_dir"].iterdir())[-1]
     again = json.loads((second / "results.json").read_text())
     assert again["spent_usd"] == 0 and again["cache_misses"] == 0
-    assert again["variants"]["v2-opus/raw"]["cases"][0]["fields"] == v2["fields"]
+    assert again["variants"]["v2-sonnet/raw"]["cases"][0]["fields"] == v2["fields"]
 
 
 def test_refuses_with_a_redirected_api_url(eval_dirs, capsys) -> None:
@@ -294,11 +293,11 @@ def test_estimate_is_free_for_cached_extractions(tmp_path) -> None:
     from pipeline.v2.markdown import to_markdown
     md = to_markdown(upes_course_docx(), "x.docx").markdown
     cache = ResponseCache(tmp_path)
-    fresh = estimate.estimate_v2("c", "v2-opus", md, "course", "Copy of UPES Online MBA program", "high", cache)
+    fresh = estimate.estimate_v2("c", "v2-sonnet", md, "course", "Copy of UPES Online MBA program", "high", cache)
     assert fresh.usd > 0 and not fresh.cached
-    request = estimate._v2_request(md, "course", "Copy of UPES Online MBA program", "claude-opus-5-5", "high")
+    request = estimate._v2_request(md, "course", "Copy of UPES Online MBA program", "claude-sonnet-5-5", "high")
     cache.put(cache.key("beta.messages.stream", request), {"stored": True})
-    assert estimate.estimate_v2("c", "v2-opus", md, "course", "Copy of UPES Online MBA program", "high", cache).usd == 0
+    assert estimate.estimate_v2("c", "v2-sonnet", md, "course", "Copy of UPES Online MBA program", "high", cache).usd == 0
 
 
 def test_syllabus_may_open_with_a_year_heading() -> None:

@@ -19,7 +19,6 @@ from evals.clients import CachingAnthropic, CachingOpenAI, Ledger, ResponseCache
 
 PIPELINES: dict[str, dict[str, Any]] = {
     "v1": {"kind": "v1"},
-    "v2-opus": {"kind": "v2", "model": "claude-opus-5-5"},
     "v2-sonnet": {"kind": "v2", "model": "claude-sonnet-5-5"},
 }
 

@@ -155,4 +155,4 @@ Run on a python-docx document with the real docs' shapes: title line, `[tag]` he
 1. **Eval data:** you'll send the `.docx` files and post IDs. Draft posts may be read with REST GET using the app's WordPress credentials.
 2. **Publish filter:** the one-line `wordpress_client.py` change in §2 is approved.
 3. **SDK:** stay on `anthropic==0.105.2`; `fallbacks` goes through `extra_body`.
-4. **Model (2026-10-24):** Sonnet 5.5 is the default v2 model; Opus 5.5 stays selectable (`V2_MODEL=claude-opus-5-5`). On 20 documents: checks 99% vs 100%, $0.089 vs $0.222 per document, 33 s vs 62 s. To confirm with prompt v2.5: re-run Sonnet on all 25 documents once the API credit is topped up.
+4. **Model (2026-10-24):** Sonnet 5.5 is the v2 model. **Opus is not used** (owner's decision): `V2_MODEL` ignores Opus values, the eval no longer runs it, and the server-side refusal fallback is off because its `default` mode can route to Opus 4.8. On 20 documents: checks 99% vs 100%, $0.089 vs $0.222 per document, 33 s vs 62 s. To confirm with prompt v2.5: re-run Sonnet on all 25 documents once the API credit is topped up.

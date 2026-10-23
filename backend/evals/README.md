@@ -1,6 +1,6 @@
 # Extraction eval: v1 vs v2
 
-Compares v1 (as published today), v2 with Opus 5.5 and v2 with Sonnet 5.5, field by field, against WordPress pages the team has corrected. Plan and design: `../../EXTRACTION_V2_PLAN.md` §5.
+Compares v1 (as published today) and v2 with Sonnet 5.5 (Opus is not used; earlier reports include it), field by field, against WordPress pages the team has corrected. Plan and design: `../../EXTRACTION_V2_PLAN.md` §5.
 
 Documents, truth, the response cache and reports stay out of git (`.gitignore`): they are real page content.
 

@@ -4,7 +4,7 @@
     python -m evals.run_eval --estimate-only                 # cost estimate, no calls
     python -m evals.run_eval --offline                       # cache only, never calls an API
     python -m evals.run_eval --yes --budget 30               # allowed to spend up to $30
-    python -m evals.run_eval --pipelines v2-opus --cases jamia-mba --split dev --yes
+    python -m evals.run_eval --pipelines v2-sonnet --cases jamia-mba --split dev --yes
 
 Safety: refuses to run with ANTHROPIC_BASE_URL or chatbot settings in the
 environment; the app database is an in-memory SQLite; WordPress is only
@@ -31,7 +31,7 @@ EVALS_DIR = Path(__file__).resolve().parent
 DEFAULT_CACHE = EVALS_DIR / ".cache" / "responses"
 DEFAULT_REPORTS = EVALS_DIR / "reports"
 
-MODES = {"v1": ("published", "raw"), "v2-opus": ("raw", "published"), "v2-sonnet": ("raw", "published")}
+MODES = {"v1": ("published", "raw"), "v2-sonnet": ("raw", "published")}
 
 
 def safety_problems(env: dict[str, str]) -> list[str]:
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None, anthropic_factory=None, openai_factory=N
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cases", nargs="*", help="case ids (default: all)")
     parser.add_argument("--split", default="all", choices=("all", "dev", "holdout"))
-    parser.add_argument("--pipelines", default="v1,v2-opus,v2-sonnet")
+    parser.add_argument("--pipelines", default="v1,v2-sonnet")
     parser.add_argument("--effort", default=None, help="v2 effort (default V2_EFFORT or high)")
     parser.add_argument("--offline", action="store_true", help="use cached responses only; never call an API")
     parser.add_argument("--yes", action="store_true", help="allow uncached (paid) calls after the estimate")

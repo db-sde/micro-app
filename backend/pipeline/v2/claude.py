@@ -1,9 +1,9 @@
 """The Claude calls v2 makes: one streaming request with a JSON Schema
-output, adaptive thinking and server-side refusal fallback; usage and
-cost per call.
+output and adaptive thinking; usage and cost per call.
 
-anthropic==0.105.2 has no typed `fallbacks` parameter, so it is sent via
-`extra_body` with its beta header.
+Sonnet only. Opus is never used: V2_MODEL can't select it, and the
+server-side refusal fallback is off because its "default" mode can hand a
+declined request to an Opus model. A refusal is reported as an error.
 """
 
 from __future__ import annotations
@@ -17,14 +17,12 @@ from typing import Any
 
 logger = logging.getLogger("degreebaba.v2.claude")
 
-# Sonnet 5.5: on the 20-document eval it passed 99% of checks vs Opus 5.5's 100% at
-# ~40% of the cost and half the time (2026-10-24). Opus stays available: V2_MODEL=claude-opus-5-5.
+# Sonnet 5.5: on the 25-document eval it passed 99% of checks at ~40% of Opus's
+# cost and half the time (2026-10-24). Opus is not to be used (owner's decision).
 DEFAULT_MODEL = "claude-sonnet-5-5"
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # USD per million tokens: input, output, cache read, cache write (5-minute TTL).
 PRICES: dict[str, tuple[float, float, float, float]] = {
-    "claude-opus-5-5": (4.00, 20.00, 0.20, 5.00),
     "claude-sonnet-5-5": (2.00, 10.00, 0.20, 2.50),
 }
 
@@ -52,7 +50,12 @@ class CallResult:
 
 
 def model_name() -> str:
-    return os.getenv("V2_MODEL", "").strip() or DEFAULT_MODEL
+    """V2_MODEL, or Sonnet 5.5. An Opus model is never used."""
+    value = os.getenv("V2_MODEL", "").strip()
+    if "opus" in value.lower():
+        logger.warning("V2_MODEL=%s ignored: Opus is not used; running %s.", value, DEFAULT_MODEL)
+        return DEFAULT_MODEL
+    return value or DEFAULT_MODEL
 
 
 def get_client():
@@ -97,7 +100,7 @@ def call_json(*, system: str, user: str, schema: dict[str, Any], model: str | No
 
     Retries once with the 128K output cap if the answer was cut off.
     """
-    model = model or model_name()
+    model = model if model and "opus" not in model.lower() else model_name()
     client = client or get_client()
     caps = [max_tokens] if max_tokens >= 128000 else [max_tokens, 128000]
     total: dict[str, int] = {}
@@ -110,8 +113,6 @@ def call_json(*, system: str, user: str, schema: dict[str, Any], model: str | No
             messages=[{"role": "user", "content": user}],
             thinking={"type": "adaptive"},
             output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
-            betas=[FALLBACK_BETA],
-            extra_body={"fallbacks": "default"},
         )
         with client.beta.messages.stream(**kwargs) as stream:
             message = stream.get_final_message()

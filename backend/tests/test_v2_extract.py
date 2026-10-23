@@ -17,7 +17,7 @@ def one_request(monkeypatch):
     monkeypatch.setattr(extract, "_GROUPED", set())
 
 
-def test_one_streaming_call_with_schema_thinking_and_fallback(one_request) -> None:
+def test_one_streaming_call_with_schema_and_thinking(one_request) -> None:
     client = standard_client()
     result = extract.extract("# Doc\n\nText", "course", "Copy of UPES Online MBA program", client=client)
     assert len(client.calls) == 1
@@ -27,8 +27,8 @@ def test_one_streaming_call_with_schema_thinking_and_fallback(one_request) -> No
     assert call["output_config"]["effort"] == "high"
     assert call["output_config"]["format"]["type"] == "json_schema"
     assert "admission_steps" in call["output_config"]["format"]["schema"]["properties"]["values"]["properties"]
-    assert call["betas"] == ["server-side-fallback-2026-07-01"]
-    assert call["extra_body"] == {"fallbacks": "default"}
+    # No server-side refusal fallback: its "default" mode can route to an Opus model.
+    assert "betas" not in call and "extra_body" not in call
     assert call["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert call["max_tokens"] == 64000
     user = call["messages"][0]["content"]
@@ -41,13 +41,21 @@ def test_one_streaming_call_with_schema_thinking_and_fallback(one_request) -> No
 
 
 def test_model_and_effort_settings(one_request, monkeypatch) -> None:
-    monkeypatch.setenv("V2_MODEL", "claude-opus-5-5")  # Opus stays selectable
     monkeypatch.setenv("V2_EFFORT", "medium")
     client = standard_client()
     result = extract.extract("x", "course", "t", model=claude.model_name(), client=client)
-    assert client.calls[0]["model"] == "claude-opus-5-5"
+    assert client.calls[0]["model"] == "claude-sonnet-5-5"
     assert client.calls[0]["output_config"]["effort"] == "medium"
-    assert result.cost_usd == pytest.approx(20000 * 4 / 1e6 + 6000 * 20 / 1e6)
+    assert result.cost_usd == pytest.approx(20000 * 2 / 1e6 + 6000 * 10 / 1e6)
+
+
+@pytest.mark.parametrize("setting", ["claude-opus-5-5", "claude-opus-4-8", "CLAUDE-OPUS-5"])
+def test_opus_is_never_used(one_request, monkeypatch, setting) -> None:
+    monkeypatch.setenv("V2_MODEL", setting)
+    assert claude.model_name() == "claude-sonnet-5-5"
+    client = standard_client()
+    extract.extract("x", "course", "t", model=setting, client=client)  # even when passed directly
+    assert client.calls[0]["model"] == "claude-sonnet-5-5"
 
 
 def test_refusal_is_an_error_not_an_empty_page() -> None:

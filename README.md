@@ -143,7 +143,7 @@ Generate the Application Password under **WP Admin → Users → Profile → App
 
 `EXTRACTION_PIPELINE` in `backend/.env` picks the extraction pipeline; it is read on every upload.
 
-- `v2` (default): the whole document as Markdown (Docling, `.docx` backend only) in **one** structured-output call to `V2_MODEL` (default `claude-sonnet-5-5`; `claude-opus-5-5` is available), exact table maths, checks that flag problems, then SEO/hero texts from the final values. Code: `backend/pipeline/v2/`; design, spike results and eval plan: `EXTRACTION_V2_PLAN.md`.
+- `v2` (default): the whole document as Markdown (Docling, `.docx` backend only) in **one** structured-output call to `V2_MODEL` (`claude-sonnet-5-5`; Opus is never used, and the refusal fallback that could route to Opus is off), exact table maths, checks that flag problems, then SEO/hero texts from the final values. Code: `backend/pipeline/v2/`; design, spike results and eval plan: `EXTRACTION_V2_PLAN.md`.
 - `v1` (rollback only): heading embeddings + one Claude Haiku call per field + regex enrichers. Set `EXTRACTION_PIPELINE=v1` to switch back without a deploy of new code.
 
 Both save the same Upload/FieldMapping rows and return the same `/upload` response; v2 adds `pipeline`, `extraction` (model, tokens, cost, latency) and per-field `flags` in the validation report, shown as ⚠ badges on the Validation and Fix Mappings screens.

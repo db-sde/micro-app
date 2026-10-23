@@ -37,7 +37,6 @@ class Estimate:
 
 def _v2_request(markdown: str, page_type: str, title: str, model: str, effort: str) -> dict[str, Any]:
     """The exact first extraction request run_v2 sends (to look it up in the cache)."""
-    from pipeline.v2.claude import FALLBACK_BETA
     from pipeline.v2.extract import SYSTEM_PROMPT, user_message
     from pipeline.v2.schema import output_schema
 
@@ -47,7 +46,6 @@ def _v2_request(markdown: str, page_type: str, title: str, model: str, effort: s
         messages=[{"role": "user", "content": user_message(markdown, page_type, title)}],
         thinking={"type": "adaptive"},
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": output_schema(page_type)}},
-        betas=[FALLBACK_BETA], extra_body={"fallbacks": "default"},
     )
 
 
