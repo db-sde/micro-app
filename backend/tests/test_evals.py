@@ -10,7 +10,6 @@ import hashlib
 import json
 from types import SimpleNamespace
 
-import httpx
 import pytest
 
 from evals import scoring
@@ -18,19 +17,6 @@ from evals.cases import load_cases, new_case
 from evals.clients import BudgetExceeded, CachingAnthropic, Ledger, OfflineMiss, ResponseCache
 from tests.conftest import FakeResponse
 from tests.v2_helpers import UPES_STEPS_HTML, FakeAnthropic, message, standard_client, upes_course_docx
-
-_ORIGINAL_SEND = httpx.Client.send  # captured at import, before conftest's network guard
-
-
-@pytest.fixture
-def allow_mock_transport(monkeypatch):
-    """Let only in-memory MockTransport clients through the network guard."""
-    def send(client, *args, **kwargs):
-        if isinstance(client._transport, httpx.MockTransport):
-            return _ORIGINAL_SEND(client, *args, **kwargs)
-        raise AssertionError("real network call attempted")
-    monkeypatch.setattr(httpx.Client, "send", send)
-
 
 # ── scoring ──
 

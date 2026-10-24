@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from acf.fields import ACF_FIELDS
+from acf.fields import ACF_FIELDS, V2_PUBLISHED_FIELDS
 from catalog.config import SyncError, settings
 from catalog.models import CatalogLock, CatalogPost, CatalogPublication, CatalogEvent, CatalogBackfill
 from db.models import Upload
@@ -68,7 +68,10 @@ def post_for(db, site, page_type, source_id):
 
 def safe_data(payload, page_type):
     # Whitelist original ACF keys; never include _meta, routing, credentials or binary media.
-    keys = {f["key"] for f in ACF_FIELDS.get(page_type, []) if f["type"] not in ("image", "file", "post_object", "relationship", "relation")}
+    # Includes the live WordPress fields only the v2 parser fills (partner banks,
+    # syllabus intro, exam cards...), so the chatbot can answer from them too.
+    fields = [*ACF_FIELDS.get(page_type, []), *V2_PUBLISHED_FIELDS.get(page_type, [])]
+    keys = {f["key"] for f in fields if f["type"] not in ("image", "file", "post_object", "relationship", "relation")}
     keys -= PROTECTED & {"linked_university", "linked_course"}
     return {k: v for k, v in payload.items() if k in keys and k not in ("category_page", "hero_image", "brochure")}
 

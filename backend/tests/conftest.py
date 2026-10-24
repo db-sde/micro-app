@@ -203,3 +203,20 @@ def wp_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WORDPRESS_SITE_URL", "https://wp.test")
     monkeypatch.setenv("WORDPRESS_APP_USER", "test-user")
     monkeypatch.setenv("WORDPRESS_APP_PASSWORD", "test-pass")
+
+
+# Captured at import, before the autouse network guard patches httpx.
+import httpx as _httpx  # noqa: E402
+
+_ORIGINAL_SEND = _httpx.Client.send
+
+
+@pytest.fixture
+def allow_mock_transport(monkeypatch):
+    """Let only in-memory MockTransport clients through the network guard
+    (e.g. the fake WordPress in evals/projection.py)."""
+    def send(client, *args, **kwargs):
+        if isinstance(client._transport, _httpx.MockTransport):
+            return _ORIGINAL_SEND(client, *args, **kwargs)
+        raise AssertionError("real network call attempted")
+    monkeypatch.setattr(_httpx.Client, "send", send)

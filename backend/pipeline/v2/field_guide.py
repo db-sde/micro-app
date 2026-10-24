@@ -115,6 +115,14 @@ COMMON: dict[str, str] = {
     "eligibility_intro": "Intro paragraph(s) above the eligibility criteria list, as plain text. Not the criteria themselves.",
     "fee_intro": "Intro paragraph(s) above the fee table/plans, as plain text. Not the fees themselves.",
     "accreditations_intro": "Intro paragraph(s) above the accreditations list, as plain text. Not the list.",
+    "partner_banks_names": (
+        "Banks / lenders / NBFCs the document names for EMI or education loans, as a clean HTML <ul> with one <li> per name "
+        "(e.g. <ul><li>HDFC Bank</li><li>Propelld</li></ul>). Names only, as written. Empty if no lender is named."
+    ),
+    "emi_interest_rate_value": (
+        "The EMI interest rate exactly as stated (e.g. '0%' for no-cost EMI, or '12% p.a.'). Empty unless the document "
+        "states a rate or says the EMI is no-cost / zero-interest."
+    ),
 }
 
 _COURSE: dict[str, str] = {
@@ -137,6 +145,7 @@ _COURSE: dict[str, str] = {
         "From a lead-in line followed by short name lines, or an inline 'include A, B, C, etc.'. Empty if none are named."
     ),
     "jobs_intro": "The paragraph above the job-roles table, as plain text. Not the table.",
+    "partner_banks_course": COMMON["partner_banks_names"],
 }
 
 _SPECIALIZATION: dict[str, str] = {
@@ -154,10 +163,22 @@ _SPECIALIZATION: dict[str, str] = {
     ),
     "jobs_content": "The paragraph(s) above the job-roles table, as plain text. Not the table.",
     "hiring_partners_specialization": _COURSE["top_hiring_partners_course"],
+    "partner_banks_specialization": COMMON["partner_banks_names"],
     "examination_process": "The examination section as rows: exam_process_title (e.g. 'Exam Mode') and exam_process_description (e.g. 'Online, Proctored Examination'). One row per point.",
 }
 
-_UNIVERSITY: dict[str, str] = {}
+_UNIVERSITY: dict[str, str] = {
+    "placement_highlights": (
+        "Short placement highlights the document states, as a clean HTML <ul> (e.g. '250+ hiring partners', "
+        "'Highest package INR 12 LPA', 'Virtual job fairs'). Only points written in the document, one per <li>; not the "
+        "whole placement text and not a list of company names. Empty if the document has none."
+    ),
+    "examination_cards": (
+        "The examination process as short cards, one row per point: exam_card_title (e.g. 'Exam Mode', 'Evaluation', "
+        "'Results') and exam_card_description (e.g. 'Online proctored exams from home'). Taken from the examination "
+        "section; exam_content keeps the full text."
+    ),
+}
 
 OVERRIDES = {"university": _UNIVERSITY, "course": _COURSE, "specialization": _SPECIALIZATION}
 

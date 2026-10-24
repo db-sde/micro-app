@@ -313,11 +313,18 @@ def get_file_field_keys(page_type: str) -> set:
 # publish filter accepts them (wordpress_client.publish_payload), and the
 # publish-time extras only fill these when they are still empty.
 V2_PUBLISHED_FIELDS: dict[str, list[dict]] = {
-    'university': [],
+    'university': [
+        {'key': 'placement_highlights',    'type': HTML},
+        {'key': 'examination_cards',       'type': JSON_ARRAY,
+         'sub_fields': [{'key': 'exam_card_title', 'type': TEXT}, {'key': 'exam_card_description', 'type': TEXT}]},
+        {'key': 'emi_interest_rate_value', 'type': TEXT},
+        {'key': 'partner_banks_names',     'type': HTML},
+    ],
     'course': [
         {'key': 'course_syllabus_description',     'type': TEXTAREA},
         {'key': 'course_syllabus_section_heading', 'type': TEXT},
         {'key': 'top_hiring_partners_course',      'type': TEXT},
+        {'key': 'partner_banks_course',            'type': HTML},
     ],
     'specialization': [
         {'key': 'syllabus_description',           'type': TEXTAREA},
@@ -326,6 +333,7 @@ V2_PUBLISHED_FIELDS: dict[str, list[dict]] = {
         {'key': 'examination_process',            'type': JSON_ARRAY,
          'sub_fields': [{'key': 'exam_process_title', 'type': TEXT}, {'key': 'exam_process_description', 'type': TEXT}]},
         {'key': 'specialization_lowest_emi_strats_from', 'type': TEXT},
+        {'key': 'partner_banks_specialization',   'type': HTML},
     ],
 }
 
