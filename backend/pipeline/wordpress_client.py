@@ -660,6 +660,47 @@ _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
     },
 }
 
+# Fields the WordPress team is adding: WordPress field -> our field that
+# holds the text. Sending a key WordPress doesn't have yet 400s the whole
+# acf object, so each one is sent only when the live schema (OPTIONS)
+# already lists it — they start filling on their own once the field is
+# created, with no code change. Copies: the source keeps going to its own
+# field too.
+_PENDING_WP_FIELDS: dict[str, dict[str, str]] = {
+    "course": {
+        "accreditation_paragraph": "accreditations_intro",
+        "eligibility_criteria_paragraph": "eligibility_intro",
+        "fee_structure_paragraph": "fee_intro",
+        "job_roles_&_salary_paragraph": "jobs_intro",
+        "syllabus_section_paragraph": "course_syllabus_description",
+        "program_validity": "validity",
+    },
+    "specialization": {
+        "eligibility_criteria_paragraph": "eligibility_intro",
+        "fee_section_paragraph": "fee_intro",
+        "job_profiles_section_paragraph": "jobs_content",
+        "other_specializations_section_paragraph": "other_specs_intro",
+        "syllabus_section_paragraph": "syllabus_description",
+    },
+}
+
+
+def _pending_wp_fields(payload: dict[str, Any], acf_fields: dict[str, Any], page_type: str, post_type: str) -> dict[str, Any]:
+    """Values for _PENDING_WP_FIELDS that WordPress already has a field for."""
+    wanted = {}
+    for wp_key, source in _PENDING_WP_FIELDS.get(page_type, {}).items():
+        value = acf_fields.get(source) or payload.get(source)
+        if value not in (None, "", [], {}) and not acf_fields.get(wp_key):
+            wanted[wp_key] = value
+    if not wanted:
+        return {}
+    live = _get_live_acf_field_types(post_type)
+    missing = sorted(k for k in wanted if k not in live)
+    if missing:
+        logger.info("PENDING_FIELDS_NOT_ON_WP: page_type=%s keys=%s (sent once WordPress has them)", page_type, missing)
+    return {k: v for k, v in wanted.items() if k in live}
+
+
 _PUBLISH_FIELD_DROP: dict[str, set[str]] = {
     "university": {
         "certificate_image",  # no matching field for university pages at all
@@ -1318,6 +1359,10 @@ def publish_payload(
     for key, value in syllabus_extras.items():
         if not acf_fields.get(key):
             acf_fields[key] = value
+
+    # Section intro paragraphs etc. under the WordPress team's new field
+    # names, only for fields WordPress already has (see _PENDING_WP_FIELDS).
+    acf_fields.update(_pending_wp_fields(payload, acf_fields, page_type, post_type))
 
     taxonomy_terms, taxonomy_warnings = _derive_taxonomies(payload, acf_fields, page_type)
 

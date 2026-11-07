@@ -337,8 +337,10 @@ V2_PUBLISHED_FIELDS: dict[str, list[dict]] = {
     ],
 }
 
-# Intro paragraphs that have no WordPress field yet. Extracted so the
-# content isn't lost; never published (the publish filter drops them).
+# Intro paragraphs kept under our own names. They are published under the
+# WordPress team's new field names (wordpress_client._PENDING_WP_FIELDS),
+# but only once WordPress actually has that field; until then they stay in
+# the app (Validation screen) and are not sent.
 V2_UNPUBLISHED_FIELDS: dict[str, list[dict]] = {
     'university': [
         {'key': 'accreditations_intro', 'type': TEXTAREA},
@@ -352,6 +354,7 @@ V2_UNPUBLISHED_FIELDS: dict[str, list[dict]] = {
     'specialization': [
         {'key': 'eligibility_intro',    'type': TEXTAREA},
         {'key': 'fee_intro',            'type': TEXTAREA},
+        {'key': 'other_specs_intro',    'type': TEXTAREA},
     ],
 }
 

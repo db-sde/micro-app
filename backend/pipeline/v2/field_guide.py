@@ -115,6 +115,7 @@ COMMON: dict[str, str] = {
     "eligibility_intro": "Intro paragraph(s) above the eligibility criteria list, as plain text. Not the criteria themselves.",
     "fee_intro": "Intro paragraph(s) above the fee table/plans, as plain text. Not the fees themselves.",
     "accreditations_intro": "Intro paragraph(s) above the accreditations list, as plain text. Not the list.",
+    "other_specs_intro": "Intro paragraph(s) above the list/table of the program's other specializations, as plain text. Not the list itself.",
     "partner_banks_names": (
         "Banks / lenders / NBFCs the document names for EMI or education loans, as a clean HTML <ul> with one <li> per name "
         "(e.g. <ul><li>HDFC Bank</li><li>Propelld</li></ul>). Names only, as written. Empty if no lender is named."

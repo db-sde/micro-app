@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from acf.fields import SKIP_EXTRACTION_FIELDS, get_v2_published_keys
+from acf.fields import SKIP_EXTRACTION_FIELDS, get_v2_published_keys, get_v2_unpublished_keys
 from pipeline.v2 import checks, derive
 from pipeline.v2.claude import ClaudeCallError, model_name
 from pipeline.v2.extract import PROMPT_VERSION, extract
@@ -170,5 +170,7 @@ def _mapping_records(page_type, payload, provenance, changes, generated, flags) 
 
 
 def extra_report_fields(page_type: str) -> list[str]:
-    """v2-only WordPress fields shown in the validation report."""
-    return sorted(get_v2_published_keys(page_type))
+    """v2-only fields shown in the validation report: the live WordPress
+    fields only v2 fills, and the section intro paragraphs (published once
+    WordPress has their fields, see wordpress_client._PENDING_WP_FIELDS)."""
+    return sorted(get_v2_published_keys(page_type) | get_v2_unpublished_keys(page_type))
