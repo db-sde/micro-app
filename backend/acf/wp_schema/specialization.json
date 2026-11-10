@@ -1,6 +1,6 @@
 {
- "source": "OPTIONS https://degreebaba.demo-nexevo.in/wp-json/wp/v2/specialization",
- "fetched_at": "2026-10-23",
+ "source": "OPTIONS https://staging.degreebaba.com/wp-json/wp/v2/specialization",
+ "fetched_at": "2026-11-10",
  "acf": {
   "about_content": {
    "type": [
@@ -134,6 +134,12 @@
     }
    }
   },
+  "eligibility_criteria_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
   "eligibility_heading": {
    "type": [
     "string",
@@ -236,6 +242,12 @@
     }
    }
   },
+  "fee_section_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
   "highlights_content": {
    "type": [
     "string",
@@ -273,6 +285,12 @@
      ]
     }
    }
+  },
+  "job_profiles_section_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
   },
   "jobs_content": {
    "type": [
@@ -319,6 +337,12 @@
    ]
   },
   "one-time_payment_value": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "other_specializations_section_paragraph": {
    "type": [
     "string",
     "null"
@@ -449,6 +473,12 @@
    ]
   },
   "syllabus_section_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "syllabus_section_paragraph": {
    "type": [
     "string",
     "null"

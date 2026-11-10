@@ -54,7 +54,8 @@ def _sent(page_type, live_extra, monkeypatch):
     real = wc._get_live_acf_field_types
 
     def live(post_type):
-        types = dict(real(post_type))  # the fake site's snapshot
+        # the fake site's snapshot, without the new fields unless listed
+        types = {k: v for k, v in real(post_type).items() if k not in EXPECTED[page_type]}
         types.update({k: ["string", "null"] for k in live_extra})
         return types
 

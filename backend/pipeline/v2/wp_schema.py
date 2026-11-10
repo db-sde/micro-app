@@ -28,7 +28,7 @@ PAGE_TYPES = ("university", "course", "specialization")
 SNAPSHOT_DIR = Path(__file__).resolve().parents[2] / "acf" / "wp_schema"
 CACHE_DIR = Path(os.getenv("V2_SCHEMA_CACHE_DIR", str(Path(__file__).resolve().parents[2] / ".cache" / "wp_schema")))
 CACHE_TTL_SECONDS = 24 * 3600
-DEFAULT_SITE = "https://degreebaba.demo-nexevo.in"
+DEFAULT_SITE = "https://staging.degreebaba.com"
 
 
 def _trim_property(prop: dict[str, Any]) -> dict[str, Any]:

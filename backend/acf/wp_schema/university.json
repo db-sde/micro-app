@@ -1,6 +1,6 @@
 {
- "source": "OPTIONS https://degreebaba.demo-nexevo.in/wp-json/wp/v2/university",
- "fetched_at": "2026-10-23",
+ "source": "OPTIONS https://staging.degreebaba.com/wp-json/wp/v2/university",
+ "fetched_at": "2026-11-10",
  "acf": {
   "about_content": {
    "type": [

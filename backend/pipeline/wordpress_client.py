@@ -652,6 +652,8 @@ _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
     "course": {
         "brochure": "download_brochure_course",
         "nirf_rank": "nirf_rank_course",
+        # staging.degreebaba.com replaced "validity" with program_validity.
+        "validity": "program_validity",
     },
     "specialization": {
         "certificate_image": "certificate_image_specialization",
@@ -673,7 +675,6 @@ _PENDING_WP_FIELDS: dict[str, dict[str, str]] = {
         "fee_structure_paragraph": "fee_intro",
         "job_roles_&_salary_paragraph": "jobs_intro",
         "syllabus_section_paragraph": "course_syllabus_description",
-        "program_validity": "validity",
     },
     "specialization": {
         "eligibility_criteria_paragraph": "eligibility_intro",
@@ -1395,6 +1396,19 @@ def publish_payload(
     # post's actual content editor is left completely empty, which is
     # what it's for: the generated page summary IS the post body here.
     post_content = acf_fields.get("complete_page_summary") if page_type in ("blog", "category") else None
+
+    # Send only fields the target WordPress actually has. One unknown key
+    # 400s the whole acf object, and sites drift: staging.degreebaba.com
+    # removed the course "validity" field (its value now goes to
+    # program_validity). Skipped when the live schema can't be read.
+    if page_type in ("university", "course", "specialization"):
+        site_fields = _get_live_acf_field_types(post_type)
+        not_on_site = sorted(k for k in acf_fields if k not in site_fields) if site_fields else []
+        for key in not_on_site:
+            acf_fields.pop(key)
+        if not_on_site:
+            logger.warning("PUBLISH_DROPPED_NOT_ON_SITE: page_type=%s site=%s keys=%s", page_type, _site_url(), not_on_site)
+            image_warnings.append("Not sent (this WordPress site has no such field): " + ", ".join(not_on_site))
 
     if post_id:
         # Updating an already-published post: title + status + acf together

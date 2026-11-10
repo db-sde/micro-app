@@ -1,6 +1,6 @@
 {
- "source": "OPTIONS https://degreebaba.demo-nexevo.in/wp-json/wp/v2/course",
- "fetched_at": "2026-10-23",
+ "source": "OPTIONS https://staging.degreebaba.com/wp-json/wp/v2/course",
+ "fetched_at": "2026-11-10",
  "acf": {
   "about_content": {
    "type": [
@@ -9,6 +9,12 @@
    ]
   },
   "about_heading": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "accreditation_paragraph": {
    "type": [
     "string",
     "null"
@@ -66,6 +72,12 @@
   "certificate_image": {
    "type": [
     "integer",
+    "null"
+   ]
+  },
+  "certificate_validity": {
+   "type": [
+    "string",
     "null"
    ]
   },
@@ -192,6 +204,12 @@
     }
    }
   },
+  "eligibility_criteria_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
   "eligibility_heading": {
    "type": [
     "string",
@@ -262,6 +280,12 @@
     }
    }
   },
+  "fee_structure_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
   "hero_description": {
    "type": [
     "string",
@@ -319,6 +343,12 @@
      ]
     }
    }
+  },
+  "job_roles_&_salary_paragraph": {
+   "type": [
+    "string",
+    "null"
+   ]
   },
   "jobs_heading": {
    "type": [
@@ -405,6 +435,12 @@
     "null"
    ]
   },
+  "program_validity": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
   "reviews": {
    "type": [
     "array",
@@ -430,6 +466,12 @@
      ]
     }
    }
+  },
+  "scholarship_facility": {
+   "type": [
+    "string",
+    "null"
+   ]
   },
   "semester_plan_amount": {
    "type": [
@@ -518,12 +560,6 @@
    ]
   },
   "university_name": {
-   "type": [
-    "string",
-    "null"
-   ]
-  },
-  "validity": {
    "type": [
     "string",
     "null"
