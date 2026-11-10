@@ -31,7 +31,16 @@ class Config:
     hosts: frozenset = frozenset()
 
 
+def enabled():
+    """Chatbot sync is OFF unless CHATBOT_SYNC_ENABLED=1. Paused while the
+    chatbot endpoint is being corrected (pages were going to the wrong
+    chatbot); while off, nothing is sent and queued pages stay stored."""
+    return os.getenv("CHATBOT_SYNC_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def settings():
+    if not enabled():
+        return None
     base = os.getenv("CHATBOT_BASE_URL", "").strip()
     secret = os.getenv("CHATBOT_CATALOG_WEBHOOK_SECRET", "")
     if not base or not secret:

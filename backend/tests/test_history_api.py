@@ -111,6 +111,7 @@ def test_stats_on_an_empty_database(api):
 
 def test_legacy_live_page_is_flagged_without_parsing_its_payload(api, factory, monkeypatch):
     monkeypatch.setenv("WORDPRESS_SITE_URL", "https://degreebaba.com")
+    monkeypatch.setenv("CHATBOT_SYNC_ENABLED", "1")
     monkeypatch.setenv("CHATBOT_BASE_URL", "https://chatbot.test")
     monkeypatch.setenv("CHATBOT_CATALOG_WEBHOOK_SECRET", "test-shared-secret-never-production-12345")
     live = add(factory, "live.docx", status="published")
