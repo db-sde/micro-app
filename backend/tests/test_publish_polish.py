@@ -6,6 +6,8 @@ site, using the payload the parser had actually stored for it.
 
 from __future__ import annotations
 
+import pytest
+
 from pipeline import wordpress_client as wc
 from pipeline.enricher import specialization_from_title, summarize_eligibility
 
@@ -143,3 +145,10 @@ def test_repeated_plan_names_get_their_option_and_lowest_total_wins():
     ]
     assert out["total_fee"] == "INR 96,000 /-"
     assert plans[0]["plan_name"] == "Semester Plan"  # the stored payload isn't changed
+
+
+@pytest.mark.parametrize("raw,expected", [("INR 8,292 /-", "₹ 8,292"), ("INR 5,000 /- approx.", "₹ 5,000"),
+                                          ("₹ 7,292", "₹ 7,292"), ("Rs. 4,583/-", "₹ 4,583"), ("Available", None)])
+def test_emi_amount_is_a_bare_amount_for_the_per_month_box(raw, expected):
+    """The theme shows "<emi_amount>/month"; "INR 8,292 /-" read "INR 8,292 /- /month"."""
+    assert polish({"emi_amount": raw}, "course")["emi_amount"] == expected

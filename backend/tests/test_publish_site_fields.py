@@ -40,4 +40,24 @@ def test_course_validity_goes_to_program_validity(monkeypatch) -> None:
 @pytest.mark.usefixtures("allow_mock_transport")
 def test_nothing_is_dropped_when_the_site_schema_cannot_be_read(monkeypatch) -> None:
     sent, _ = _publish(monkeypatch, {})
-    assert sent["emi_amount"] == "INR 8,000 /-" and sent["total_fee"] == "INR 1,96,000 /-"
+    assert sent["emi_amount"] == "₹ 8,000" and sent["total_fee"] == "INR 1,96,000 /-"
+
+
+SPEC = {"spec_name": "Data Science", "total_fee": "INR 1,99,000 /-", "job_profiles": None, "examination_process": None,
+        "faqs": [{"question": "Q?", "answer": "A."}], "jobs_content": None}
+
+
+@pytest.mark.usefixtures("allow_mock_transport")
+def test_empty_repeaters_are_left_out_not_sent_as_null(monkeypatch) -> None:
+    """staging.degreebaba.com 400s the whole page on null for a repeater."""
+    from evals.projection import FakeWordPress, _fake_site
+    site = {"spec_name": ["string", "null"], "total_fee": ["string", "null"], "jobs_content": ["string", "null"],
+            "job_profiles": ["array", "null"], "examination_process": ["array", "null"], "faqs": ["array", "null"]}
+    monkeypatch.setattr(wc, "_get_live_acf_field_types", lambda post_type: site)
+    fake = FakeWordPress()
+    with _fake_site(fake, raw=False):
+        wc.publish_payload(dict(SPEC), "specialization", status="draft")
+    sent = fake.sent_acf()
+    assert "job_profiles" not in sent and "examination_process" not in sent
+    assert sent["faqs"] == SPEC["faqs"]
+    assert "jobs_content" in sent  # a null text field is fine and still sent

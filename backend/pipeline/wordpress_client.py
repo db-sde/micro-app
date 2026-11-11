@@ -427,6 +427,14 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
     # 4b. Hiring partners as a list of company names (chips).
     _fix_partner_lists(acf, page_type)
 
+    # 4c. EMI amount: the theme prints it as "<amount>/month", so it must be a
+    #     bare amount ("₹ 8,292", as the WordPress team enters it), not
+    #     "INR 8,292 /-" (shown as "INR 8,292 /- /month").
+    emi = acf.get("emi_amount")
+    if isinstance(emi, str) and emi.strip():
+        m = re.search(r"\d[\d,]*(?:\.\d+)?", emi)
+        acf["emi_amount"] = f"₹ {m.group(0).rstrip(',')}" if m else None
+
     # 5. Eligibility note: the old derivation glued title+description and
     #    cut it with "...".
     summary = acf.get("eligibility_summary")
@@ -1458,6 +1466,14 @@ def publish_payload(
         if not_on_site:
             logger.warning("PUBLISH_DROPPED_NOT_ON_SITE: page_type=%s site=%s keys=%s", page_type, _site_url(), not_on_site)
             image_warnings.append("Not sent (this WordPress site has no such field): " + ", ".join(not_on_site))
+
+        # An empty repeater is left out, not sent as null: staging.degreebaba.com
+        # rejects null for a repeater ("must be of type array or null" 400s the
+        # whole page), and leaving it out never wipes rows added by hand in WP.
+        for key in [k for k, v in acf_fields.items() if v is None]:
+            types = site_fields.get(key) or []
+            if "array" in types or (not site_fields and get_field_type(key, page_type) == JSON_ARRAY):
+                acf_fields.pop(key)
 
     if post_id:
         # Updating an already-published post: title + status + acf together
