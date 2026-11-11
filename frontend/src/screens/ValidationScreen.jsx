@@ -566,6 +566,64 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
 /* ═══════════════════════════════════════
    PUBLISH TO WORDPRESS MODAL
    ═══════════════════════════════════════ */
+// The admission fee note is typed in by the team (never filled by AI), so it
+// gets its own box instead of only the JSON editor.
+function AdmissionFeeNote({ uploadId, payload, onSaved }) {
+  const current = payload?.admission_fee_note || '';
+  const [value, setValue] = useState(current);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setValue(current); }, [current]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/payload/${uploadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: { ...payload, admission_fee_note: value.trim() || null } }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Save failed (${res.status})`);
+      }
+      onSaved(await res.json());
+      showToast('Admission fee note saved', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card" id="admission-fee-note-card" style={{ marginBottom: 24 }}>
+      <div className="card-body">
+        <label className="input-label" htmlFor="admission-fee-note" style={{ display: 'block', marginBottom: 4 }}>
+          Admission fee note
+        </label>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
+          Typed in by you, not filled automatically. Shown under the admission steps. Leave empty if not needed.
+        </div>
+        <textarea
+          id="admission-fee-note"
+          className="input"
+          rows={2}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. A non-refundable application fee of INR 600 is payable while applying."
+          style={{ width: '100%', resize: 'vertical' }}
+        />
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary" onClick={save} disabled={saving || value === current} id="btn-save-fee-note">
+            {saving ? 'Saving…' : 'Save note'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
   const [goLive, setGoLive] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -838,6 +896,10 @@ export default function ValidationScreen() {
 
       <StepIndicator currentStep={4} />
       <CatalogSync uploadId={uploadId} initialSync={data?.catalog_sync} />
+
+      {['university', 'course', 'specialization'].includes(data?.page_type) && (
+        <AdmissionFeeNote uploadId={uploadId} payload={data?.payload} onSaved={handleJsonSaved} />
+      )}
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>

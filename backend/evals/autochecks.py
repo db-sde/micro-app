@@ -69,13 +69,12 @@ def admission_checks(markdown: str) -> list[dict[str, Any]]:
         {"type": "contains", "field": "admission_steps", "phrases": [first[:45].strip(), last[:45].strip()], "auto": "first and last step"},
     ]
     after = " ".join(section[steps[-1][0] + 1:])
-    steps_text = " ".join(_plain(m.group(0)) for _, m in steps)
     amounts = [a.strip() for a in _AMOUNT_RE.findall(after)]
     if amounts:
         amount = re.sub(r"\s*/-$", "", amounts[0]).strip()
-        checks.append({"type": "contains", "field": "admission_fee_note", "phrases": [amount], "auto": "amount after the last step"})
-        if amount not in steps_text:
-            checks.append({"type": "not_contains", "field": "admission_steps", "phrases": [amount], "auto": "note is not a step"})
+        # Text after the last step stays on the page under the steps; the fee
+        # note itself is typed in by the team (acf.fields.MANUAL_FIELDS).
+        checks.append({"type": "contains", "field": "admission_steps", "phrases": [amount], "auto": "text after the last step is kept"})
     return checks
 
 

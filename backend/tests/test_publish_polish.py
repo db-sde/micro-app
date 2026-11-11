@@ -53,13 +53,18 @@ def test_a_genuine_note_is_kept():
     assert out["admission_fee_note"] == "To secure a seat, pay the program fee."
 
 
-def test_later_lists_become_the_note_instead_of_extra_steps():
-    """Jain university: "Important instructions" were numbered as steps 7 and 8."""
+def test_later_lists_are_not_extra_steps_and_the_note_stays_manual():
+    """Jain university: "Important instructions" were numbered as steps 7 and 8.
+    They stay under the steps as text; the fee note is typed by the team, so
+    it is never filled from them (a copy of a step is still removed)."""
     html = ("<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
             "<p><strong>Important instructions:</strong></p><ul><li>Use an active e-mail ID.</li><li>Use the QMS for queries.</li></ul>")
     out = polish({"admission_steps": html, "admission_fee_note": "Step 2. Pay."}, "university")
-    assert out["admission_steps"] == "<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
-    assert out["admission_fee_note"] == "Use an active e-mail ID. Use the QMS for queries."
+    assert out["admission_steps"] == ("<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
+                                      "<p>Use an active e-mail ID. Use the QMS for queries.</p>")
+    assert out["admission_fee_note"] is None
+    typed = polish({"admission_steps": html, "admission_fee_note": "Application fee: INR 600"}, "university")
+    assert typed["admission_fee_note"] == "Application fee: INR 600"
 
 
 def test_steps_written_as_paragraphs_become_a_list():

@@ -27,7 +27,8 @@ ROW_MATCH = 0.8
 GENERATED = {"seo_title", "meta_description", "hero_description", "specialization_hero_description", "programs_intro"}
 NOT_SCORED_RE = re.compile(
     r"^(linked_university|linked_course|category_page|popularity_score|course_intake|video_.*|.*_thumbnail|"
-    r"certificate_image.*|download_brochure_.*|hero_image)$")
+    r"certificate_image.*|download_brochure_.*|hero_image|"
+    r"admission_fee_note)$")  # admission_fee_note: typed in by the team (acf.fields.MANUAL_FIELDS)
 KEY_SUBFIELDS = ("question", "plan_name", "job_title", "program_name", "other_spec_name", "specialization_name",
                  "body_name", "course_body_name", "member_name", "highlight_title", "eligibility_title",
                  "exam_process_title", "exam_card_title", "course_year_title", "year_title",

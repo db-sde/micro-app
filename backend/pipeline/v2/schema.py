@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from acf.fields import (
-    ACF_FIELDS, V2_PUBLISHED_FIELDS, V2_UNPUBLISHED_FIELDS,
+    ACF_FIELDS, MANUAL_FIELDS, V2_PUBLISHED_FIELDS, V2_UNPUBLISHED_FIELDS,
     HTML, JSON_ARRAY, NON_EXTRACTABLE_TYPES,
 )
 from pipeline.v2.field_guide import describe
@@ -61,7 +61,7 @@ def field_defs(page_type: str) -> list[dict[str, Any]]:
 
 def extracted_fields(page_type: str) -> list[dict[str, Any]]:
     """The fields the model fills."""
-    skip = GENERATED_FIELDS.get(page_type, set()) | DERIVED_FIELDS.get(page_type, set())
+    skip = GENERATED_FIELDS.get(page_type, set()) | DERIVED_FIELDS.get(page_type, set()) | MANUAL_FIELDS
     return [f for f in field_defs(page_type) if f["type"] not in NON_EXTRACTABLE_TYPES and f["key"] not in skip]
 
 

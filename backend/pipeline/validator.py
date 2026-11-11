@@ -13,7 +13,7 @@ import hashlib
 import json
 from typing import Any
 
-from acf.fields import ACF_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type
+from acf.fields import ACF_FIELDS, MANUAL_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type
 
 SHORT_OK_FIELDS = {
     'university_name', 'university_full_name', 'established_year',
@@ -36,7 +36,9 @@ def get_field_status(field_key: str, value: Any, field_type: str, word_count: in
     if field_key in SKIP_EXTRACTION_FIELDS:
         return 'skipped'    # not missing — just not extractable from Word
     if value is None or value == '' or value == [] or value == {}:
-        return 'missing'
+        # Typed in by the team when needed (e.g. admission_fee_note), so an
+        # empty one isn't a missing field.
+        return 'skipped' if field_key in MANUAL_FIELDS else 'missing'
     if field_type in ('html', 'textarea', 'text') and word_count < 30:
         if field_key not in SHORT_OK_FIELDS:
             return 'thin'

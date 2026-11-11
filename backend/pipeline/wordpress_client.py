@@ -419,8 +419,13 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
         note_text = _plain(note)
         if _STEP_RE.match(note_text) or (len(note_text) > 15 and note_text.lower().rstrip(".") in steps_text):
             acf["admission_fee_note"] = None
-    if not acf.get("admission_fee_note") and extra_note:
-        acf["admission_fee_note"] = extra_note
+    if extra_note:
+        # The fee note is typed by the team, never filled automatically; text
+        # after the last step stays on the page under the steps instead.
+        acf["admission_steps"] += f"<p>{_escape_html(extra_note)}</p>"
+
+    # 4b. Hiring partners as a list of company names (chips).
+    _fix_partner_lists(acf, page_type)
 
     # 5. Eligibility note: the old derivation glued title+description and
     #    cut it with "...".
@@ -462,7 +467,10 @@ def _label_repeated_plans(plans: list[dict[str, Any]]) -> None:
             row["plan_name"] = f"{str(row.get('plan_name')).strip()} ({option})"
 
 
-_PARTNER_FIELD = {"course": "top_hiring_partners_course", "specialization": "hiring_partners_specialization"}
+# Where hiring partner names go; the theme shows each <li> as a chip. On
+# university pages that is placement_highlights ("Top Hiring Partners").
+_PARTNER_FIELD = {"course": "top_hiring_partners_course", "specialization": "hiring_partners_specialization",
+                  "university": "placement_highlights"}
 _PARTNER_LEAD_RE = re.compile(r"\b(hiring|recruit\w*|partner\w*|compan\w*|corporate\w*|employer\w*|organi[sz]ations?|alumni)\b", re.I)
 
 
@@ -528,7 +536,47 @@ def _placement_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
     if not names:
         return {}
     acf["placement_content"] = rewritten
-    return {target: ", ".join(names)}
+    return {target: _names_as_list(names)}
+
+
+def _names_as_list(names: list[str]) -> str:
+    return "<ul>" + "".join(f"<li>{_escape_html(n)}</li>" for n in names) + "</ul>"
+
+
+def _list_items(html: str) -> list[str]:
+    return [_plain(x) for x in re.findall(r"<li[^>]*>(.*?)</li>", html or "", re.I | re.S) if _plain(x)]
+
+
+def _fix_partner_lists(acf: dict[str, Any], page_type: str) -> None:
+    """Hiring partners must be a <ul> of company names for the chip design.
+    Older uploads hold 'IBM, KPMG, Infosys' text (course/spec) or placement
+    stats ('500+ hiring partners', university), which showed as wrong chips."""
+    key = _PARTNER_FIELD.get(page_type)
+    value = acf.get(key) if key else None
+    if not isinstance(value, str) or not value.strip():
+        return
+    if "<li" not in value.lower():
+        import html as _html
+        names = [_clean_partner(n) for n in re.split(r",\s*|\n+", _html.unescape(_plain(value)))]
+        names = [n for n in names if n]
+        acf[key] = _names_as_list(names) if names else None
+    elif page_type == "university":
+        items = _list_items(value)
+        if not items or any(re.search(r"\d", i) or not _looks_like_company(i) for i in items):
+            acf[key] = None  # stats, not company names; filled from placement_content when it names them
+
+
+_BEST_PRICE_FIELD = {"course": "best_price_value", "specialization": "best_price_specialization"}
+
+
+def _best_price_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
+    """'Best Fee' (At a Glance box) is the page's lowest total fee, which is
+    what total_fee holds after the fee clean-up."""
+    target = _BEST_PRICE_FIELD.get(page_type)
+    total = acf.get("total_fee")
+    if target and isinstance(total, str) and re.search(r"\d", total):
+        return {target: total}
+    return {}
 
 
 def _syllabus_extras(acf: dict[str, Any], page_type: str) -> dict[str, str]:
@@ -1219,6 +1267,7 @@ def publish_payload(
     acf_fields = _polish_for_wordpress(acf_fields, page_type)
     syllabus_extras = _syllabus_extras(acf_fields, page_type)
     syllabus_extras.update(_placement_extras(acf_fields, page_type))
+    syllabus_extras.update(_best_price_extras(acf_fields, page_type))
 
     # hero_image has no ACF field on any page type — it's handled as the
     # native WordPress Featured Image instead (see below), never sent

@@ -247,6 +247,10 @@ ACF_FIELDS = {
 # WordPress and can never come from document text. IMAGE fields are
 # deliberately NOT included here: they ARE extractable (via /upload-image),
 # so "missing" is a real, actionable signal until an image is uploaded.
+# Typed in by the team, never filled by AI (the Validation screen has a box
+# for it). Not counted as missing when empty.
+MANUAL_FIELDS = {"admission_fee_note"}
+
 SKIP_EXTRACTION_FIELDS = {
     f['key']
     for fields in ACF_FIELDS.values()
@@ -323,13 +327,15 @@ V2_PUBLISHED_FIELDS: dict[str, list[dict]] = {
     'course': [
         {'key': 'course_syllabus_description',     'type': TEXTAREA},
         {'key': 'course_syllabus_section_heading', 'type': TEXT},
-        {'key': 'top_hiring_partners_course',      'type': TEXT},
+        {'key': 'top_hiring_partners_course',      'type': HTML},
         {'key': 'partner_banks_course',            'type': HTML},
+        {'key': 'scholarship_facility',            'type': TEXTAREA},
+        {'key': 'certificate_validity',            'type': TEXT},
     ],
     'specialization': [
         {'key': 'syllabus_description',           'type': TEXTAREA},
         {'key': 'syllabus_section_heading',       'type': TEXT},
-        {'key': 'hiring_partners_specialization', 'type': TEXT},
+        {'key': 'hiring_partners_specialization', 'type': HTML},
         {'key': 'examination_process',            'type': JSON_ARRAY,
          'sub_fields': [{'key': 'exam_process_title', 'type': TEXT}, {'key': 'exam_process_description', 'type': TEXT}]},
         {'key': 'specialization_lowest_emi_strats_from', 'type': TEXT},

@@ -18,7 +18,7 @@ NEW = {
 }
 
 VALUES = {
-    "placement_highlights": "<ul><li>250+ hiring partners</li></ul>",
+    "placement_highlights": "<ul><li>Amazon</li><li>Deloitte</li></ul>",
     "examination_cards": [{"exam_card_title": "Exam Mode", "exam_card_description": "Online proctored"}],
     "emi_interest_rate_value": "0%",
     "partner_banks_names": "<ul><li>HDFC Bank</li><li>Propelld</li></ul>",

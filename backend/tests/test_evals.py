@@ -219,7 +219,7 @@ def eval_dirs(tmp_path):
     d = new_case("upes-mba", docx, "course", post_id=7, root=tmp_path / "cases")
     spec = json.loads((d / "case.json").read_text())
     spec["checks"] = [{"type": "html_list_items", "field": "admission_steps", "equals": 2},
-                      {"type": "contains", "field": "admission_fee_note", "phrases": ["Additional information"]}]
+                      {"type": "empty", "field": "admission_fee_note"}]   # typed in by the team, never extracted
     (d / "case.json").write_text(json.dumps(spec))
     (d / "truth.json").write_text(json.dumps({"title": "UPES Online MBA", "acf": {
         "program_name": "UPES Online MBA", "admission_steps": UPES_STEPS_HTML,
@@ -250,9 +250,9 @@ def test_full_run_then_free_offline_rerun(eval_dirs) -> None:
     assert set(results["variants"]) == {"v1/published", "v1/raw", "v2-sonnet/raw", "v2-sonnet/published"}
     v2 = results["variants"]["v2-sonnet/raw"]["cases"][0]
     fields = {f["field"]: f for f in v2["fields"]}
-    assert fields["admission_steps"]["passed"] and fields["admission_fee_note"]["passed"]
+    assert fields["admission_steps"]["passed"] and "admission_fee_note" not in fields  # manual field, not scored
     assert fields["course_amount_range"]["passed"] and fields["post_title"]["passed"]
-    assert all(c["passed"] for c in v2["checks"])
+    assert all(c["passed"] for c in v2["checks"]), [c for c in v2["checks"] if not c["passed"]]
     assert v2["cost_usd"] > 0 and results["spent_usd"] > 0
     report = (first / "report.md").read_text()
     assert "## Summary" in report and "v2-sonnet/raw" in report and "## Stress checks" in report

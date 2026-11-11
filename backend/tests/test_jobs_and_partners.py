@@ -9,6 +9,8 @@ payloads (UPES, Jain, OP Jindal) and docx_parser output.
 
 from __future__ import annotations
 
+import pytest
+
 from pipeline import wordpress_client as wc
 from pipeline.enricher import _derive_jobs_intro
 
@@ -19,7 +21,8 @@ UPES = ("<p>UPES has strong ties to leading MNCs.</p><p>Some of the major active
 def test_partners_after_a_lead_in_line():
     acf = {"placement_content": UPES}
     extras = wc._placement_extras(acf, "specialization")
-    assert extras == {"hiring_partners_specialization": "IBM, KPMG, Larsen & Tourbo, Adecco"}
+    assert extras == {"hiring_partners_specialization":
+                      "<ul><li>IBM</li><li>KPMG</li><li>Larsen &amp; Tourbo</li><li>Adecco</li></ul>"}
     assert acf["placement_content"].endswith(
         "<ul><li>IBM</li><li>KPMG</li><li>Larsen &amp; Tourbo</li><li>Adecco</li></ul>")
     assert acf["placement_content"].startswith("<p>UPES has strong ties")
@@ -32,7 +35,8 @@ def test_partners_written_inline_in_a_sentence():
             "<p>Professional resumes.</p><p>Interview preparation guide.</p>")
     acf = {"placement_content": html}
     assert wc._placement_extras(acf, "course") == {
-        "top_hiring_partners_course": "Infosys, Honeywell, Hitachi, Johnson Controls, ICICI Bank"}
+        "top_hiring_partners_course":
+            "<ul><li>Infosys</li><li>Honeywell</li><li>Hitachi</li><li>Johnson Controls</li><li>ICICI Bank</li></ul>"}
     assert acf["placement_content"] == html  # inline form: content left as written
 
 
@@ -46,11 +50,28 @@ def test_organizations_where_alumni_work():
     html = ("<p>Some of the major organizations where the alumni of the program work are listed below:</p>"
             "<p>ICICI Bank</p><p>ITC</p><p>ANZ, etc.</p>")
     assert wc._placement_extras({"placement_content": html}, "course") == {
-        "top_hiring_partners_course": "ICICI Bank, ITC, ANZ"}
+        "top_hiring_partners_course": "<ul><li>ICICI Bank</li><li>ITC</li><li>ANZ</li></ul>"}
 
 
-def test_university_pages_have_no_partner_field():
-    assert wc._placement_extras({"placement_content": UPES}, "university") == {}
+def test_university_partners_go_to_placement_highlights():
+    """The university 'Top Hiring Partners' chips read placement_highlights."""
+    extras = wc._placement_extras({"placement_content": UPES}, "university")
+    assert extras == {"placement_highlights":
+                      "<ul><li>IBM</li><li>KPMG</li><li>Larsen &amp; Tourbo</li><li>Adecco</li></ul>"}
+
+
+@pytest.mark.parametrize("page_type,key", [("course", "top_hiring_partners_course"),
+                                           ("specialization", "hiring_partners_specialization")])
+def test_older_comma_text_becomes_a_list_at_publish(page_type, key):
+    acf = wc._polish_for_wordpress({key: "IBM, KPMG, Infosys"}, page_type)
+    assert acf[key] == "<ul><li>IBM</li><li>KPMG</li><li>Infosys</li></ul>"
+
+
+def test_university_placement_stats_are_not_shown_as_partner_chips():
+    acf = wc._polish_for_wordpress({"placement_highlights": "<ul><li>500+ hiring partners</li><li>Dedicated job portal</li></ul>"}, "university")
+    assert acf["placement_highlights"] is None
+    names = "<ul><li>Amazon</li><li>Deloitte</li></ul>"
+    assert wc._polish_for_wordpress({"placement_highlights": names}, "university")["placement_highlights"] == names
 
 
 def _job_section(heading="upes online mba job opportunities", cols=("job_profiles", "average_salary")):

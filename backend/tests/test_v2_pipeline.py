@@ -63,7 +63,7 @@ def test_payload_values(result) -> None:
     payload = result["payload"]
     assert payload["program_name"] == "UPES Online MBA"
     assert payload["admission_steps"].startswith("<p>Follow these steps to apply:</p><ol><li><strong>Step 1.")
-    assert payload["admission_fee_note"].startswith("Additional information:")
+    assert not payload.get("admission_fee_note")  # typed in by the team, never extracted
     assert payload["emi_amount"] is None  # "N/A" from the model
     # exact table maths
     assert payload["course_amount_range"] == "INR 25,000 /- Semester – INR 40,000 /- Semester"
@@ -85,7 +85,7 @@ def test_mappings_say_where_each_value_came_from(result) -> None:
     assert by_key["admission_steps"]["source"] == "LLM"
     assert by_key["admission_steps"]["heading_in_doc"] == "[admission_heading] UPES Online MBA Admission Process"
     assert by_key["admission_steps"]["confidence"] == 0.95
-    assert by_key["admission_fee_note"]["confidence"] == 0.75
+    assert "admission_fee_note" not in by_key
     assert by_key["course_amount_range"]["source"] == "DERIVED"
     assert by_key["seo_title"]["source"] == "AI_GENERATED"
 
@@ -142,17 +142,14 @@ def test_flags_survive_a_reload_and_clear_when_the_field_is_edited(api, result) 
 
 def test_problems_found_in_the_answer_are_flagged(factory, monkeypatch) -> None:
     bad = course_answer(accreditations_heading="AI FOR HUMAN RESOURCES : 1,96,000/-",
-                        course_accreditations=[{"course_body_name": "UGC", "course_body_descriptor": "", "course_body_detail": ""}],
-                        admission_fee_note="Step 2. Register online: Create an account on the UPES Online portal.")
+                        course_accreditations=[{"course_body_name": "UGC", "course_body_descriptor": "", "course_body_detail": ""}])
     monkeypatch.setattr(claude, "get_client", lambda: standard_client(answer=bad))
     monkeypatch.setenv("EXTRACTION_PIPELINE", "v2")
     with factory() as db:
         out = service.run_extraction_pipeline(upes_course_docx(), FILENAME, "course", db)
     report = {r["field_key"]: r for r in out["validation"]["field_report"]}
     assert out["payload"]["accreditations_heading"] == "UPES Online MBA Accreditations"  # unusable -> fallback
-    assert "note_is_a_step" in [f["code"] for f in report["admission_fee_note"]["flags"]]
-    mappings = {m["field_key"]: m for m in out["field_mappings"]}
-    assert mappings["admission_fee_note"]["confidence"] == 0.3
+    assert report["admission_fee_note"]["status"] == "skipped"   # manual field: empty is not "missing"
 
 
 def test_v2_is_the_default(monkeypatch, factory) -> None:

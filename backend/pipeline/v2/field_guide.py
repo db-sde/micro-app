@@ -82,8 +82,8 @@ COMMON: dict[str, str] = {
         "When a step has no title of its own, keep it as written: <li><strong>Step 1.</strong> Visit the official website…</li>; "
         "never invent a step title. "
         "Steps written as paragraphs ('Step 1…', 'Step 2…') also become <li> items. Anything after the last step "
-        "(notes, 'Important instructions', 'Additional information') is NOT a step: leave it out here (it goes to "
-        "admission_fee_note). Do not start with the section heading."
+        "(notes, 'Important instructions', 'Additional information') is NOT a step: keep it after the </ol> as <p> "
+        "paragraphs. Do not start with the section heading."
     ),
     "emi_content": "Body of the EMI / financing section as clean HTML. Do not start with the section heading.",
     "exam_content": "Body of the examination section as clean HTML. Do not start with the section heading.",
@@ -142,8 +142,17 @@ _COURSE: dict[str, str] = {
     ),
     "course_syllabus_description": "The paragraph shown above the year/semester syllabus accordion (the intro before the first year/semester), as plain text. Not the subjects.",
     "top_hiring_partners_course": (
-        "Hiring partners / recruiters / companies where alumni work, as 'A, B, C' (names only, HTML entities decoded, no 'etc.'). "
-        "From a lead-in line followed by short name lines, or an inline 'include A, B, C, etc.'. Empty if none are named."
+        "Hiring partners / recruiters / companies where alumni work, as a clean HTML <ul> with one <li> per company name "
+        "(e.g. <ul><li>Infosys</li><li>KPMG</li></ul>; names only, no 'etc.'), shown as chips on the page. From a lead-in "
+        "line followed by short name lines, or an inline 'include A, B, C, etc.'. Empty if no company is named."
+    ),
+    "scholarship_facility": (
+        "Scholarships or fee relief the document describes (who qualifies, how much, e.g. merit or need-based, defence "
+        "personnel, alumni discounts), as plain text, 1-3 sentences. Empty if the document mentions none; never a review."
+    ),
+    "certificate_validity": (
+        "How long the degree/certificate itself stays valid, exactly as stated (e.g. 'Lifetime'). Empty unless the document "
+        "says so. Not the program duration or the time allowed to finish the program."
     ),
     "jobs_intro": "The paragraph above the job-roles table, as plain text. Not the table.",
     "partner_banks_course": COMMON["partner_banks_names"],
@@ -170,9 +179,9 @@ _SPECIALIZATION: dict[str, str] = {
 
 _UNIVERSITY: dict[str, str] = {
     "placement_highlights": (
-        "Short placement highlights the document states, as a clean HTML <ul> (e.g. '250+ hiring partners', "
-        "'Highest package INR 12 LPA', 'Virtual job fairs'). Only points written in the document, one per <li>; not the "
-        "whole placement text and not a list of company names. Empty if the document has none."
+        "The university's top hiring partners (shown as 'Top Hiring Partners' chips): a clean HTML <ul> with one <li> per "
+        "company name the document lists as a recruiter or hiring partner (e.g. <ul><li>Amazon</li><li>Deloitte</li></ul>). "
+        "Names only; not statistics such as '500+ hiring partners' and not services. Empty if no company is named."
     ),
     "examination_cards": (
         "The examination process as short cards, one row per point: exam_card_title (e.g. 'Exam Mode', 'Evaluation', "

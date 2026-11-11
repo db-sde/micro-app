@@ -31,7 +31,7 @@ def test_fields_the_site_lacks_are_not_sent(monkeypatch) -> None:
 
 @pytest.mark.usefixtures("allow_mock_transport")
 def test_course_validity_goes_to_program_validity(monkeypatch) -> None:
-    site = {k: ["string", "null"] for k in ("program_name", "total_fee", "emi_amount", "program_validity")}
+    site = {k: ["string", "null"] for k in ("program_name", "total_fee", "emi_amount", "program_validity", "best_price_value")}
     sent, result = _publish(monkeypatch, site)
     assert sent["program_validity"] == "4 Years" and "validity" not in sent
     assert not result["warnings"]

@@ -75,7 +75,6 @@ def course_answer(**overrides: Any) -> dict[str, Any]:
         "about_content": "<p>UPES Online offers a two-year MBA. Established in 2003, it is NAAC A grade.</p>",
         "admission_heading": "UPES Online MBA Admission Process",
         "admission_steps": UPES_STEPS_HTML,
-        "admission_fee_note": "Additional information: Keep scanned copies of your documents ready.",
         "fee_heading": "",
         "emi_amount": "N/A",
         "specialization": [{"specialization_name": "Marketing", "specialization_details": ""},
@@ -91,7 +90,6 @@ def course_answer(**overrides: Any) -> dict[str, Any]:
         {"field": "program_name", "heading": "Copy of UPES Online MBA program", "confidence": "high"},
         {"field": "about_content", "heading": "[about_heading] About UPES Online MBA", "confidence": "high"},
         {"field": "admission_steps", "heading": "[admission_heading] UPES Online MBA Admission Process", "confidence": "high"},
-        {"field": "admission_fee_note", "heading": "[admission_heading] UPES Online MBA Admission Process", "confidence": "medium"},
         {"field": "specialization", "heading": "UPES Online MBA Specialization-wise Fees", "confidence": "high"},
     ]
     return {"values": values, "provenance": provenance, "notes": ["No placement section."]}
