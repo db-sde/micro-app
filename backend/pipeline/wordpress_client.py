@@ -1499,7 +1499,13 @@ def publish_payload(
         # DOES persist acf data) works around it with no WordPress-side
         # change needed. "content" is native WP, not ACF, so it's safe to
         # include on create directly (unaffected by that quirk).
-        create_body: dict[str, Any] = {"title": post_title, "status": status}
+        #
+        # The post is created as a draft and gets its real status together
+        # with its acf data, so an empty page is never live. If WordPress
+        # rejects the acf data, the empty draft is deleted again: failed
+        # publishes used to leave empty live pages behind (and took their
+        # slug, so the retry became "data-science-2").
+        create_body: dict[str, Any] = {"title": post_title, "status": "draft"}
         if featured_media_id is not None:
             create_body["featured_media"] = featured_media_id
         if post_content:
@@ -1517,11 +1523,15 @@ def publish_payload(
         if post_type in ("university", "course", "category-page"):
             _invalidate_post_cache(post_type)
 
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            resp = client.post(
-                f"{base_url}/{new_id}", json={"acf": acf_fields}, auth=_auth()
-            )
-        _raise_for_wp_error(resp)
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                resp = client.post(
+                    f"{base_url}/{new_id}", json={"acf": acf_fields, "status": status}, auth=_auth()
+                )
+            _raise_for_wp_error(resp)
+        except Exception:
+            _delete_empty_post(base_url, new_id, post_type)
+            raise
         data = resp.json()
     wp_id = data.get("id")
     site = _site_url()
@@ -1541,6 +1551,24 @@ def publish_payload(
         page_type, post_type, wp_id, result["status"], len(image_warnings), taxonomy_terms, relationship_ids,
     )
     return result
+
+
+def _delete_empty_post(base_url: str, post_id: Any, post_type: str) -> None:
+    """Remove a post this publish created moments ago whose acf data was
+    rejected (it holds only a title). Best-effort: a failure here is logged
+    and the original error is what the user sees."""
+    if not post_id:
+        return
+    try:
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            resp = client.delete(f"{base_url}/{post_id}", params={"force": "true"}, auth=_auth())
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+        logger.warning("PUBLISH_ROLLED_BACK: deleted empty %s post %s after its acf data was rejected", post_type, post_id)
+    except Exception as exc:
+        logger.error("PUBLISH_ROLLBACK_FAILED: empty %s post %s is left on WordPress (%s); delete it by hand", post_type, post_id, exc)
+    if post_type in ("university", "course", "category-page"):
+        _invalidate_post_cache(post_type)
 
 
 def read_catalog_references(page_type: str, post_id: str) -> dict[str, Any]:
