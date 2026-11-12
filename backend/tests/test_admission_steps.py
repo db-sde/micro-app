@@ -44,7 +44,7 @@ def test_bold_step_lines_stay_inside_the_admission_section():
     assert any("exam" in h for h in sections)
 
 
-def test_each_step_keeps_its_description_and_trailing_info_stays_under_the_steps():
+def test_each_step_keeps_its_description_and_trailing_info_leaves_the_steps_box():
     html = "<p>Follow the process:</p>" + "".join(f"<p>{t}</p><p>{b}</p>" for t, b in STEPS) + \
            "<p>Additional information:</p><p>The application form fee is non-refundable.</p>"
     out = wc._polish_for_wordpress({"admission_steps": html}, "university")
@@ -53,7 +53,6 @@ def test_each_step_keeps_its_description_and_trailing_info_stays_under_the_steps
         "<li><strong>Step 1. Ensure your eligibility:</strong> Check the eligibility criteria of the program.</li>"
         "<li><strong>Step 2. Fill out the application form:</strong> Click Apply Now and fill out the form.</li>"
         "<li><strong>Step 3. Make the payment:</strong> Pay the program fee to secure a seat.</li></ol>"
-        "<p>The application form fee is non-refundable.</p>"
     )
     assert not out.get("admission_fee_note")  # typed in by the team
 
@@ -71,6 +70,5 @@ def test_step_titles_written_as_subheadings_with_an_info_list_after():
         "<p>Follow the process:</p><ol>"
         "<li><strong>Step 1. Ensure your eligibility:</strong> Check the criteria.</li>"
         "<li><strong>Step 2. Make the payment:</strong> Pay the fee.</li></ol>"
-        "<p>The form fee is non-refundable. Note the transaction number.</p>"
     )
     assert out["admission_fee_note"] is None  # a copy of a step is removed; never auto-filled

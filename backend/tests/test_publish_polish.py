@@ -62,8 +62,7 @@ def test_later_lists_are_not_extra_steps_and_the_note_stays_manual():
     html = ("<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
             "<p><strong>Important instructions:</strong></p><ul><li>Use an active e-mail ID.</li><li>Use the QMS for queries.</li></ul>")
     out = polish({"admission_steps": html, "admission_fee_note": "Step 2. Pay."}, "university")
-    assert out["admission_steps"] == ("<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
-                                      "<p>Use an active e-mail ID. Use the QMS for queries.</p>")
+    assert out["admission_steps"] == "<p>Follow these steps:</p><ol><li>Register.</li><li>Pay.</li></ol>"
     assert out["admission_fee_note"] is None
     typed = polish({"admission_steps": html, "admission_fee_note": "Application fee: INR 600"}, "university")
     assert typed["admission_fee_note"] == "Application fee: INR 600"

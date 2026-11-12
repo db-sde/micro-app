@@ -20,6 +20,7 @@ from pipeline.v2.extract import PROMPT_VERSION, extract
 from pipeline.v2.generate import generate
 from pipeline.v2.markdown import to_markdown
 from pipeline.v2.schema import CONFIDENCE_SCORE, extracted_fields, field_defs, to_payload
+from pipeline.enricher import specialization_from_title
 from pipeline.validator import value_fingerprint
 
 logger = logging.getLogger("degreebaba.v2")
@@ -59,6 +60,11 @@ def run_v2(file_bytes: bytes, filename: str, forced_page_type: str | None, clien
     timings["markdown_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
     page_type = forced_page_type or _detect_page_type(file_bytes)
+    if not forced_page_type and page_type == "course" and specialization_from_title(filename):
+        # "Uttaranchal University Online MBA in Business Analytics" was
+        # auto-detected as a course and published as one.
+        logger.info("V2_PAGE_TYPE: %s titled like a specialization; using specialization, not course", filename)
+        page_type = "specialization"
     title = document_title(filename)
     model = model_name()
 

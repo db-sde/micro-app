@@ -378,11 +378,11 @@ def _normalize_admission_steps(html: str) -> tuple[str, str | None]:
     if not first_close:
         return html, None
     head, tail = html[: first_close.end()], html[first_close.end():]
-    extra = [_plain(li) for li in re.findall(r"<li[^>]*>(.*?)</li>", tail, re.I | re.S)]
-    extra = [e for e in extra if e]
-    if not extra:
+    parts = [_plain(x) for x in re.findall(r"<(?:li|p|h[1-6])[^>]*>(.*?)</(?:li|p|h[1-6])>", tail, re.I | re.S)]
+    extra = [e for e in parts if e and not e.endswith(":")]
+    if not _plain(tail):
         return html, None
-    return head, " ".join(extra)
+    return head, " ".join(extra) or None
 
 
 def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]:
@@ -396,6 +396,8 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
     #    heading twice ("Jain Online Examination process" + "Jain
     #    Examination Process").
     for key, value in list(acf.items()):
+        if key == "syllabus_content":
+            continue  # its first heading is a year or subject group ("Core Courses"), not the section title
         if isinstance(value, str) and get_field_type(key, page_type) == HTML and _LEADING_HEADING_RE.match(value):
             stripped = _LEADING_HEADING_RE.sub("", value, count=1).strip()
             if stripped:
@@ -419,10 +421,9 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
         note_text = _plain(note)
         if _STEP_RE.match(note_text) or (len(note_text) > 15 and note_text.lower().rstrip(".") in steps_text):
             acf["admission_fee_note"] = None
-    if extra_note:
-        # The fee note is typed by the team, never filled automatically; text
-        # after the last step stays on the page under the steps instead.
-        acf["admission_steps"] += f"<p>{_escape_html(extra_note)}</p>"
+    # Text after the last step is left out of the steps box (it showed
+    # misaligned under the numbered list). The fee note is typed by the team;
+    # the Validation screen offers that text as a suggestion.
 
     # 4b. Hiring partners as a list of company names (chips).
     _fix_partner_lists(acf, page_type)
@@ -553,6 +554,71 @@ def _names_as_list(names: list[str]) -> str:
 
 def _list_items(html: str) -> list[str]:
     return [_plain(x) for x in re.findall(r"<li[^>]*>(.*?)</li>", html or "", re.I | re.S) if _plain(x)]
+
+
+def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
+    """The theme shows hiring partners as chips from their own field; the
+    same names as a bullet list in placement_content showed them twice
+    (Symbiosis BBA, Sharda Finance). Remove that list and its lead-in line."""
+    key = _PARTNER_FIELD.get(page_type)
+    names = {n.lower() for n in _list_items(acf.get(key) or "")} if key else set()
+    html = acf.get("placement_content")
+    if len(names) < 2 or not isinstance(html, str):
+        return
+    blocks = list(re.finditer(r"<(p|ul|ol)\b[^>]*>(.*?)</\1>", html, re.I | re.S))
+    drop: set[int] = set()
+    replace: dict[int, str] = {}
+    for i, m in enumerate(blocks):
+        if m.group(1).lower() == "p":
+            continue
+        items = [x.lower() for x in _list_items(m.group(0))]
+        if len(items) >= 2 and all(x in names for x in items):
+            drop.add(i)
+            prev = blocks[i - 1] if i else None
+            if prev is not None and prev.group(1).lower() == "p":
+                lead = _plain(prev.group(2))
+                if lead.endswith(":") and _PARTNER_LEAD_RE.search(lead):
+                    # Drop only the lead-in sentence; keep anything before it.
+                    sentences = re.split(r"(?<=[.!?])\s+", lead)
+                    rest = " ".join(sentences[:-1]).strip()
+                    if rest:
+                        replace[i - 1] = f"<p>{_escape_html(rest)}</p>"
+                    else:
+                        drop.add(i - 1)
+    if not drop:
+        return
+    kept, pos = [], 0
+    for i, m in enumerate(blocks):
+        if i in drop or i in replace:
+            kept.append(html[pos:m.start()] + replace.get(i, ""))
+            pos = m.end()
+    kept.append(html[pos:])
+    cleaned = "".join(kept).strip()
+    acf["placement_content"] = cleaned or None
+
+
+def _syllabus_years_from_content(acf: dict[str, Any], page_type: str) -> dict[str, Any]:
+    """Programs without a year/semester syllabus (e.g. a DBA: 'Core Courses',
+    'Research Modules') left the theme's syllabus accordion empty. Build
+    its rows from syllabus_content: one per subject group."""
+    keys = {"course": ("course_academic_years", "course_year_title", "course_semesters", "course_semester_title", "course_semester_subjects"),
+            "specialization": ("academic_years", "year_title", "semesters", "semester_title", "semester_subjects")}.get(page_type)
+    html = acf.get("syllabus_content")
+    if not keys or acf.get(keys[0]) or not isinstance(html, str) or "<li" not in html.lower():
+        return {}
+    field, year_key, sems_key, sem_title_key, subjects_key = keys
+    rows, title = [], None
+    for m in re.finditer(r"<(h[1-6]|ul|ol)\b[^>]*>(.*?)</\1>", html, re.I | re.S):
+        if m.group(1).lower().startswith("h"):
+            title = _plain(m.group(2))
+            continue
+        items = _list_items(m.group(0))
+        if items:
+            group = title or "Subjects"
+            rows.append({year_key: group, sems_key: [{sem_title_key: group,
+                         subjects_key: "<ul>" + "".join(f"<li>{_escape_html(x)}</li>" for x in items) + "</ul>"}]})
+            title = None
+    return {field: rows} if rows else {}
 
 
 def _fix_partner_lists(acf: dict[str, Any], page_type: str) -> None:
@@ -1407,8 +1473,12 @@ def publish_payload(
             if wants_number:
                 m = re.search(r"\d+", str(acf_fields[key]))
                 acf_fields[key] = int(m.group(0)) if m else None
-            elif not isinstance(acf_fields[key], str):
-                acf_fields[key] = str(acf_fields[key])
+            else:
+                # A text field shows exactly what's sent: "2", without its
+                # unit, looked broken on every course page; send "2 Years".
+                source = _PUBLISH_NUMERIC_DERIVE.get(page_type, {}).get(key)
+                full = acf_fields.get(source) if source else None
+                acf_fields[key] = full if isinstance(full, str) and full.strip() else str(acf_fields[key])
 
     # Resolve real WordPress taxonomy terms (program, mode, level,
     # institution, discipline, approval_body) — see _derive_taxonomies.
@@ -1417,6 +1487,9 @@ def publish_payload(
     for key, value in syllabus_extras.items():
         if not acf_fields.get(key):
             acf_fields[key] = value
+    _dedupe_partner_list(acf_fields, page_type)
+    for key, value in _syllabus_years_from_content(acf_fields, page_type).items():
+        acf_fields[key] = value
 
     # Section intro paragraphs etc. under the WordPress team's new field
     # names, only for fields WordPress already has (see _PENDING_WP_FIELDS).

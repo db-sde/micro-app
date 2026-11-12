@@ -13,7 +13,7 @@ import hashlib
 import json
 from typing import Any
 
-from acf.fields import ACF_FIELDS, MANUAL_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type
+from acf.fields import ACF_FIELDS, MANUAL_FIELDS, SKIP_EXTRACTION_FIELDS, get_field_type, get_v2_published_keys, get_v2_unpublished_keys
 
 SHORT_OK_FIELDS = {
     'university_name', 'university_full_name', 'established_year',
@@ -90,6 +90,12 @@ def validate_payload(
     required_fields = [f['key'] for f in fields_list]
     required_fields += [k for k in (extra_fields or []) if k not in required_fields]
     total_required = len(required_fields)
+    # Only some documents have these (partner banks, scholarship, intro
+    # paragraphs, ...), and certificate_heading no longer exists on the
+    # specialization page: empty is "not in this document", not missing.
+    optional = get_v2_published_keys(page_type) | get_v2_unpublished_keys(page_type)
+    if page_type == "specialization":
+        optional |= {"certificate_heading"}
 
     mapped = 0
     thin = 0
@@ -106,6 +112,8 @@ def validate_payload(
             word_count = len(str(value).split())
 
         status = get_field_status(field_key, value, ft, word_count)
+        if status == 'missing' and field_key in optional:
+            status = 'skipped'
 
         if status == 'missing':
             missing += 1

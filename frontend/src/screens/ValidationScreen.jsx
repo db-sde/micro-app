@@ -568,8 +568,20 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
    ═══════════════════════════════════════ */
 // The admission fee note is typed in by the team (never filled by AI), so it
 // gets its own box instead of only the JSON editor.
+// Text the document has after its last admission step ("Note: the
+// application fee is INR 1,200 …"): offered as a suggestion, never filled in.
+function noteSuggestion(stepsHtml) {
+  if (typeof stepsHtml !== 'string') return '';
+  const close = Math.max(stepsHtml.toLowerCase().lastIndexOf('</ol>'), stepsHtml.toLowerCase().lastIndexOf('</ul>'));
+  if (close < 0) return '';
+  const div = document.createElement('div');
+  div.innerHTML = stepsHtml.slice(close + 5);
+  return (div.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 function AdmissionFeeNote({ uploadId, payload, onSaved }) {
   const current = payload?.admission_fee_note || '';
+  const suggestion = noteSuggestion(payload?.admission_steps);
   const [value, setValue] = useState(current);
   const [saving, setSaving] = useState(false);
 
@@ -614,6 +626,15 @@ function AdmissionFeeNote({ uploadId, payload, onSaved }) {
           placeholder="e.g. A non-refundable application fee of INR 600 is payable while applying."
           style={{ width: '100%', resize: 'vertical' }}
         />
+        {suggestion && !value && (
+          <div style={{ marginTop: 8, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }} id="fee-note-suggestion">
+            From the document: “{suggestion}”{' '}
+            <button type="button" className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+              onClick={() => setValue(suggestion)} id="btn-use-fee-note-suggestion">
+              Use this
+            </button>
+          </div>
+        )}
         <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary" onClick={save} disabled={saving || value === current} id="btn-save-fee-note">
             {saving ? 'Saving…' : 'Save note'}
