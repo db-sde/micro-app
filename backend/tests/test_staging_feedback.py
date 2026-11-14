@@ -169,3 +169,15 @@ def test_other_specs_come_from_the_programs_fee_table():
     derive.apply_specialization_fees(payload, [table], "specialization")
     assert [(r["other_spec_name"], r["other_spec_fee"]) for r in payload["other_specs"]] == [
         ("Finance", "INR 1,18,000 /-"), ("Marketing", "INR 1,18,000 /-")]
+
+
+def test_partner_names_written_in_a_sentence_are_not_repeated_under_the_chips():
+    """SMU MBA / DSU AI: 'Deloitte, PayPal, ... are among the leading hiring partners' above the same chips."""
+    chips = "<ul><li>Deloitte</li><li>PayPal</li><li>Amazon</li><li>Jio</li></ul>"
+    acf = {"top_hiring_partners_course": chips,
+           "placement_content": "<p>With 500+ active hiring partners, SMU offers the right opportunity.</p>"
+                                "<p>Deloitte, PayPal, Amazon, and Jio are among the leading hiring partners.</p>"
+                                "<p>Placement support is free. Deloitte, PayPal, Amazon and Jio hire graduates.</p>"}
+    wc._dedupe_partner_list(acf, "course")
+    assert acf["placement_content"] == ("<p>With 500+ active hiring partners, SMU offers the right opportunity.</p>"
+                                        "<p>Placement support is free.</p>")

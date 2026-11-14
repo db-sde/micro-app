@@ -628,6 +628,17 @@ def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
     replace: dict[int, str] = {}
     for i, m in enumerate(blocks):
         if m.group(1).lower() == "p":
+            # "Deloitte, PayPal, Tata Communications, ... are among the leading
+            # hiring partners": the same names as the chips, written inline.
+            # Drop that sentence; keep the paragraph's other sentences.
+            text = _plain(m.group(2))
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            kept_sentences = [s for s in sentences if sum(1 for n in names if n in s.lower()) < max(3, len(names) - 1)]
+            if len(kept_sentences) < len(sentences):
+                if kept_sentences:
+                    replace[i] = f"<p>{_escape_html(' '.join(kept_sentences))}</p>"
+                else:
+                    drop.add(i)
             continue
         items = [x.lower() for x in _list_items(m.group(0))]
         if len(items) >= 2 and all(x in names for x in items):
@@ -646,7 +657,7 @@ def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
                         replace[i - 1] = f"<p>{_escape_html(rest)}</p>"
                     else:
                         drop.add(i - 1)
-    if not drop:
+    if not drop and not replace:
         return
     kept, pos = [], 0
     for i, m in enumerate(blocks):
