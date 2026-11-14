@@ -63,7 +63,7 @@ def tables_as_section_map(tables: list[list[list[str]]]) -> dict[str, Any]:
 def apply_specialization_fees(payload: dict[str, Any], tables: list[list[list[str]]], page_type: str) -> list[dict[str, str]]:
     """Exact fee-table maths (see enricher._derive_specialization_fees)."""
     log: list[dict[str, str]] = []
-    _derive_specialization_fees(payload, tables_as_section_map(tables), page_type, log)
+    _derive_specialization_fees(payload, tables_as_section_map(tables), page_type, log, keep_list=True)
     return [_record(e["field_key"], e["source"]) for e in log]
 
 

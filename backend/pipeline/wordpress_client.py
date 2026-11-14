@@ -335,6 +335,10 @@ def _plain(html: Any) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", str(html or ""))).strip()
 
 
+def _norm_words(text: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", _plain(text).lower()).strip()
+
+
 def _page_name(acf: dict[str, Any], page_type: str) -> str:
     key = {"course": "program_name", "specialization": "spec_name"}.get(page_type, "university_name")
     return str(acf.get(key) or acf.get("university_name") or "").strip()
@@ -443,6 +447,24 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
         from pipeline.enricher import summarize_eligibility
         acf["eligibility_summary"] = summarize_eligibility(acf.get("eligibility_content")) or None
 
+    # 5b. The eligibility note (green box) must add something: one that
+    #     repeats a criterion or the intro showed the same text twice.
+    summary = acf.get("eligibility_summary")
+    if isinstance(summary, str) and summary.strip():
+        s = _norm_words(summary)
+        others = [_norm_words(r.get("eligibility_description")) for r in (acf.get("eligibility_content") or []) if isinstance(r, dict)]
+        others += [_norm_words(acf.get(k)) for k in ("eligibility_intro", "eligibility_criteria_paragraph") if acf.get(k)]
+        if any(s and o and (s in o or o in s) for o in others):
+            acf["eligibility_summary"] = None
+
+    # 5c. Validity equal to the duration was copied from it, not stated
+    #     (validity is how long you may take / the degree stays valid).
+    duration = re.sub(r"\s+", " ", str(acf.get("duration") or "")).strip().lower()
+    for key in ("validity", "program_validity"):
+        val = acf.get(key)
+        if duration and isinstance(val, str) and re.sub(r"\s+", " ", val).strip().lower() == duration:
+            acf[key] = None
+
     # 6. Fees: rows without an amount ("Variable by specialization", null)
     #    rendered as four "Variable by specialization" cards; a "Total" row
     #    is the real total when total_fee picked up a single year.
@@ -503,22 +525,26 @@ def _placement_partners(html: str) -> tuple[list[str], str]:
     sentence ("... include Infosys, Honeywell, Hitachi, etc."). A list of
     services after a lead-in ("Professional resumes.") is not partners.
     """
-    items = [b[1] for b in re.findall(r"<(p|li)[^>]*>(.*?)</\1>", html or "", re.I | re.S)]
+    blocks = list(re.finditer(r"<(p|li)[^>]*>(.*?)</\1>", html or "", re.I | re.S))
+    items = [m.group(2) for m in blocks]
     for i, item in enumerate(items):
         text = _plain(item)
         if not (text.endswith(":") and _PARTNER_LEAD_RE.search(text)):
             continue
-        names = []
-        for following in items[i + 1:]:
-            if not _looks_like_company(_plain(following)):
+        following_blocks = []
+        for m in blocks[i + 1:]:
+            if not _looks_like_company(_plain(m.group(2))):
                 break
-            names.append(_clean_partner(following))
-        names = [n for n in names if n]
+            following_blocks.append(m)
+        names = [n for n in (_clean_partner(m.group(2)) for m in following_blocks) if n]
         if len(names) >= 2:
+            if all(m.group(1).lower() == "li" for m in following_blocks):
+                return names, html  # already a list: leave the text exactly as written
+            # Names written one per line: only those lines become a list; the
+            # rest of the text (including other bullet lists) is kept as is.
+            start, end = following_blocks[0].start(), following_blocks[-1].end()
             listed = "".join(f"<li>{_escape_html(n)}</li>" for n in names)
-            head = "".join(f"<p>{x}</p>" for x in items[: i + 1])
-            tail = "".join(f"<p>{x}</p>" for x in items[i + 1 + len(names):])
-            return names, f"{head}<ul>{listed}</ul>{tail}"
+            return names, f"{html[:start]}<ul>{listed}</ul>{html[end:]}"
     for item in items:
         text = _plain(item)
         if not _PARTNER_LEAD_RE.search(text):
@@ -556,6 +582,22 @@ def _list_items(html: str) -> list[str]:
     return [_plain(x) for x in re.findall(r"<li[^>]*>(.*?)</li>", html or "", re.I | re.S) if _plain(x)]
 
 
+_LIST_INTRO_RE = re.compile(
+    r"(?:,\s*|\s+)(?:some of (?:which|whom|them)|among (?:which|whom)|of which|including|which include|such as|"
+    r"(?:the )?(?:most )?(?:prominent|major|top|notable) (?:ones|of them))\b.*:\s*$"
+    r"|\s+(?:are|include|includes|is|are as follows|is as follows|are listed below|are mentioned below)\s*:\s*$", re.I)
+
+
+def _stat_without_lead_in(sentence: str) -> str | None:
+    """'The university has 500+ hiring partners, among which the most
+    prominent ones are mentioned below:' -> 'The university has 500+ hiring
+    partners.' None when the sentence carries no number (nothing to keep)."""
+    if not re.search(r"\d", sentence):
+        return None
+    cut = _LIST_INTRO_RE.sub("", sentence).rstrip(" :,")
+    return (cut + ".") if cut and cut != sentence.rstrip(":") else None
+
+
 def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
     """The theme shows hiring partners as chips from their own field; the
     same names as a bullet list in placement_content showed them twice
@@ -578,9 +620,12 @@ def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
             if prev is not None and prev.group(1).lower() == "p":
                 lead = _plain(prev.group(2))
                 if lead.endswith(":") and _PARTNER_LEAD_RE.search(lead):
-                    # Drop only the lead-in sentence; keep anything before it.
+                    # Drop only the lead-in sentence; keep anything before it,
+                    # and keep a stat it carries ("has 800+ recruiters, some of
+                    # whom are:" -> "has 800+ recruiters.").
                     sentences = re.split(r"(?<=[.!?])\s+", lead)
-                    rest = " ".join(sentences[:-1]).strip()
+                    last = _stat_without_lead_in(sentences[-1])
+                    rest = " ".join([*sentences[:-1], *([last] if last else [])]).strip()
                     if rest:
                         replace[i - 1] = f"<p>{_escape_html(rest)}</p>"
                     else:

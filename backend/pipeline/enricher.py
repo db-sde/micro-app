@@ -509,6 +509,7 @@ def _derive_specialization_fees(
     section_map: dict[str, Any],
     page_type: str,
     enrichment_log: list[dict[str, str]],
+    keep_list: bool = False,
 ) -> None:
     """Fill the course's specialization list + fee range, and the fees of a
     specialization page's "other specializations", from the document's
@@ -521,6 +522,32 @@ def _derive_specialization_fees(
     # "All Specializations" fee isn't part of it.
     all_fees = [text for r in rows for _, text in r["fees"]]
     catch_all = next((r for r in found if r.get("catch_all")), None)
+
+    if page_type == "course" and keep_list:
+        # v2: the model's list is what the document offers. A fee table with a
+        # "specialization" column can also list other programs (Symbiosis:
+        # 17 "Post Graduate Diploma in ..." rows), so it only adds fees to the
+        # specializations already listed, and no list means none are offered.
+        listed = [s for s in (payload.get("specialization") or []) if isinstance(s, dict) and s.get("specialization_name")]
+        by_name = {r["name"].lower(): r for r in rows}
+        matched = []
+        for spec in listed:
+            key = spec["specialization_name"].lower().strip()
+            r = by_name.get(key) or next((v for k, v in by_name.items() if key and (key in k or k in key)), None)
+            if r:
+                matched.append(r)
+                if not spec.get("specialization_details"):
+                    spec["specialization_details"] = " · ".join(
+                        f"{text} ({label})" if len(r["fees"]) > 1 and label else text for label, text in r["fees"])
+        if matched:
+            enrichment_log.append({"field_key": "specialization", "status": "enriched", "source": "derive:specialization_table"})
+        fee_range = _fee_range_text([text for r in matched for _, text in r["fees"]])
+        if fee_range:
+            payload["course_amount_range"] = fee_range
+            enrichment_log.append({"field_key": "course_amount_range", "status": "enriched", "source": "derive:specialization_table"})
+            if not re.search(r"\d", str(payload.get("total_fee") or "")):
+                payload["total_fee"] = fee_range
+        return
 
     if page_type == "course":
         if rows:

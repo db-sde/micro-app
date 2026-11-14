@@ -48,8 +48,10 @@ COMMON: dict[str, str] = {
     "mode_of_learning": "Mode of learning as stated (e.g. 'Online').",
     "mode": "Mode of learning as stated (e.g. 'Online', 'Hybrid').",
     "duration": "Program duration as a short value, e.g. '2 Years' or '24 Months'.",
-    "validity": "How long the program/degree stays valid, as stated (e.g. '4 Years').",
-    "program_validity": "How long the program/degree stays valid, as stated (e.g. '4 Years').",
+    "validity": ("Program validity (the maximum time allowed to complete the program) exactly as stated, e.g. '4 Years'. "
+                 "Empty unless the document states it; never copy the program duration."),
+    "program_validity": ("Program validity (the maximum time allowed to complete the program) exactly as stated, e.g. '4 Years'. "
+                         "Empty unless the document states it; never copy the program duration."),
     "num_programs": "Number of programs the university offers, as a short stat (e.g. '5+'). Only if stated or countable from the programs table.",
     "num_specializations": "Number of specializations offered, as a short stat (e.g. '8+'). Only if stated or countable from a specialization list/table.",
     "starting_fee": "The lowest fee the page starts from, as written (e.g. 'INR 60,000 /-'). " + _MONEY,
@@ -89,7 +91,8 @@ COMMON: dict[str, str] = {
     "exam_content": "Body of the examination section as clean HTML. Do not start with the section heading.",
     "faculty_intro": "The paragraph before the faculty list/table, as plain text. Not the list itself.",
     "placement_content": (
-        "Body of the placement section as clean HTML, kept as written. Do not claim guaranteed placement unless the "
+        "Body of the placement section as clean HTML, kept as written. Services or items written one per line become a <ul> "
+        "with one <li> each. Do not claim guaranteed placement unless the "
         "document says so (some only list where alumni work). Do not start with the section heading."
     ),
     "syllabus_content": "The whole syllabus as clean HTML: <h3> per year, <h4> per semester, a <ul> of every subject. Keep every semester and every subject.",
@@ -130,7 +133,8 @@ _COURSE: dict[str, str] = {
     "program_name": "The program's page name from the document title, e.g. 'Jamia Online MBA' or 'Shoolini University Online MBA' (no 'Copy of', no 'program'/'page').",
     "about_content": "Body of the About-the-program section as clean HTML. Keep all of it. Do not start with the section heading.",
     "specialization": (
-        "Every specialization offered, one row each: specialization_name, and specialization_details = its fee(s) as written "
+        "Every specialization THIS program offers (not other programs, diplomas or courses of the university), one row each; "
+        "empty when the program has no specializations. specialization_name, and specialization_details = its fee(s) as written "
         "when a specialization-wise fee table gives them (empty otherwise). An 'All Specializations' row is a shared fee, not a "
         "specialization: never list it."
     ),

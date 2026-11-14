@@ -100,3 +100,44 @@ def test_specialization_titled_document_is_not_published_as_a_course(monkeypatch
     with pytest.raises(RuntimeError):
         run.run_v2(b"", "Copy of Uttaranchal University Online MBA in Business Analytics.docx", "course")  # chosen by hand: kept
     assert seen["page_type"] == "course"
+
+
+
+def test_partner_extraction_keeps_the_other_bullet_lists():
+    """UPES/Manav Rachna: the services list became one <p> per line on WordPress."""
+    html = ("<p>Services include:</p><ul><li>Career Orientation</li><li>Interview preparation</li></ul>"
+            "<p>Some of the major hiring partners are:</p><p>FedEx</p><p>Amazon</p><p>KPMG</p>")
+    names, out = wc._placement_partners(html)
+    assert names == ["FedEx", "Amazon", "KPMG"]
+    assert out.startswith("<p>Services include:</p><ul><li>Career Orientation</li><li>Interview preparation</li></ul>")
+    assert out.endswith("<ul><li>FedEx</li><li>Amazon</li><li>KPMG</li></ul>")
+    listed = "<p>Top recruiters are:</p><ul><li>FedEx</li><li>Amazon</li></ul>"
+    assert wc._placement_partners(listed) == (["FedEx", "Amazon"], listed)
+
+
+@pytest.mark.parametrize("lead,kept", [
+    ("The institution has 800+ recruiters who annually hire skilled graduates, some of whom are:",
+     "The institution has 800+ recruiters who annually hire skilled graduates."),
+    ("The Manav Rachna CDOE has 200+ hiring partners, some of which are as follows:", "The Manav Rachna CDOE has 200+ hiring partners."),
+    ("The university has 500+ hiring partners, among which the most prominent ones are mentioned below:", "The university has 500+ hiring partners."),
+])
+def test_placement_stats_survive_when_the_partner_list_is_removed(lead, kept):
+    acf = {"hiring_partners_specialization": PARTNERS,
+           "placement_content": f"<p>{lead}</p><ul><li>Pepsi</li><li>Amazon</li><li>HCL</li></ul>"}
+    wc._dedupe_partner_list(acf, "specialization")
+    assert acf["placement_content"] == f"<p>{kept}</p>"
+
+
+def test_eligibility_note_that_repeats_a_criterion_is_dropped():
+    crit = "The applicant must have completed 12th grade from a recognized board."
+    out = wc._polish_for_wordpress({"eligibility_summary": crit,
+                                    "eligibility_content": [{"eligibility_title": "Qualification", "eligibility_description": crit}]}, "course")
+    assert out["eligibility_summary"] is None
+    other = wc._polish_for_wordpress({"eligibility_summary": "Working professionals get preference.",
+                                      "eligibility_content": [{"eligibility_title": "Qualification", "eligibility_description": crit}]}, "course")
+    assert other["eligibility_summary"] == "Working professionals get preference."
+
+
+def test_validity_copied_from_the_duration_is_dropped():
+    assert wc._polish_for_wordpress({"duration": "3 Years", "validity": "3 years"}, "course")["validity"] is None
+    assert wc._polish_for_wordpress({"duration": "2 Years", "validity": "4 Years"}, "course")["validity"] == "4 Years"

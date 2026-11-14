@@ -75,13 +75,13 @@ def test_steps_written_as_paragraphs_become_a_list():
     assert out["admission_steps"] == "<p>Follow the process:</p><ol><li>Step 1. Register online.</li><li>Step 2. Upload documents.</li></ol>"
 
 
-def test_truncated_eligibility_note_is_rebuilt():
+def test_truncated_eligibility_note_is_rebuilt_and_dropped_when_it_repeats_a_criterion():
     out = polish({
         "eligibility_summary": "Educational Qualification Bachelor's degree in any stream from a recognized university...",
         "eligibility_content": [{"eligibility_title": "Educational Qualification",
                                  "eligibility_description": "Bachelor's degree in any stream from a recognized university"}],
     })
-    assert out["eligibility_summary"] == "Bachelor's degree in any stream from a recognized university."
+    assert out["eligibility_summary"] is None  # the green note would repeat the criterion card
 
 
 def test_total_row_is_the_total_fee():

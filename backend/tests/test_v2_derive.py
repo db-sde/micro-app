@@ -26,19 +26,25 @@ SHARDA_TABLE = [
 ]
 
 
-def test_course_gets_specialization_rows_with_their_fees() -> None:
-    payload = {"total_fee": "INR 1,30,000 /-"}
+def test_course_specializations_get_their_fees_from_the_table() -> None:
+    payload = {"total_fee": "INR 1,30,000 /-", "specialization": [{"specialization_name": "Marketing Management"}]}
     derive.apply_specialization_fees(payload, [SHOOLINI_TABLE], "course")
-    assert payload["specialization"][0] == {
+    assert payload["specialization"] == [{
         "specialization_name": "Marketing Management",
         "specialization_details": "INR 1,50,000 /- (with pay after placement option) · "
                                   "INR 1,30,000 /- (without pay after placement option)",
-    }
-    assert len(payload["specialization"]) == 2
+    }]  # the table's other rows aren't added: the list is what the document offers
+
+
+def test_a_fee_table_does_not_create_specializations_the_program_lacks() -> None:
+    """Symbiosis SCDL: a table of 17 'Post Graduate Diploma in ...' rows became its specializations."""
+    payload = {"total_fee": "INR 1,30,000 /-", "specialization": None}
+    derive.apply_specialization_fees(payload, [SHOOLINI_TABLE], "course")
+    assert not payload.get("specialization") and "course_amount_range" not in payload
 
 
 def test_varying_fees_give_a_range_and_fill_a_total_without_digits() -> None:
-    payload = {"total_fee": None}
+    payload = {"total_fee": None, "specialization": [{"specialization_name": "Marketing"}, {"specialization_name": "Sales and Marketing"}]}
     derive.apply_specialization_fees(payload, [SHARDA_TABLE], "course")
     assert payload["course_amount_range"] == "INR 25,000 /- Semester – INR 40,000 /- Semester"
     assert payload["total_fee"] == payload["course_amount_range"]
@@ -62,9 +68,9 @@ def test_specialization_page_other_specs_get_fees_and_shared_lowest() -> None:
 
 def test_merged_title_row_above_the_header_is_skipped() -> None:
     titled = [["Fees", "Fees", "Fees"], *SHOOLINI_TABLE]
-    payload = {}
+    payload = {"specialization": [{"specialization_name": "Marketing Management"}, {"specialization_name": "Retail Management"}]}
     derive.apply_specialization_fees(payload, [titled], "course")
-    assert [r["specialization_name"] for r in payload["specialization"]] == ["Marketing Management", "Retail Management"]
+    assert all(r.get("specialization_details") for r in payload["specialization"])
 
 
 def test_placeholders_are_null_in_fields_and_rows() -> None:
