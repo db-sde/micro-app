@@ -32,7 +32,7 @@ CONFIDENCE_SCORE = {"high": 0.95, "medium": 0.75, "low": 0.5}
 
 # Written after extraction from the final values (pipeline/v2/generate.py).
 GENERATED_FIELDS: dict[str, set[str]] = {
-    "university": {"seo_title", "meta_description", "programs_intro"},
+    "university": {"seo_title", "meta_description"},
     "course": {"seo_title", "meta_description"},
     "specialization": {"seo_title", "meta_description"},
 }
@@ -40,7 +40,8 @@ GENERATED_FIELDS: dict[str, set[str]] = {
 # Taken from the document when the writers wrote it (e.g. a [hero_description]
 # section), otherwise written after extraction like the fields above.
 GENERATED_IF_MISSING: dict[str, set[str]] = {
-    "university": {"hero_description"},
+    # programs_intro: the document's paragraph above the programs table when it has one
+    "university": {"hero_description", "programs_intro"},
     "course": {"hero_description"},
     "specialization": {"specialization_hero_description"},
 }
@@ -102,6 +103,8 @@ def _value_schema(page_type: str, f: dict[str, Any]) -> dict[str, Any]:
     text = describe(page_type, f["key"])
     if f["type"] == HTML and "HTML" not in text:
         text = (text + " " if text else "") + "Clean HTML using only <p> <ul> <ol> <li> <strong> <em> <h3> <h4>."
+    if f["type"] == HTML:
+        text += " Keep the document's own wording; don't rewrite, expand or add bold that the document doesn't have."
     if text:
         schema["description"] = text
     return schema

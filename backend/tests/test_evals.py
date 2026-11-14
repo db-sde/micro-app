@@ -348,3 +348,18 @@ def test_batches_merge_into_one_report() -> None:
     assert merged["cases"] == ["a", "b"]
     assert [c["acc"] for c in merged["variants"]["v2-opus/raw"]["cases"]] == [3, 2]   # latest run wins
     assert merged["spent_usd"] == 3.0
+
+
+@pytest.mark.usefixtures("allow_mock_transport")
+def test_regression_rules_catch_the_reported_problems() -> None:
+    from evals import regression
+    payload = {"program_name": "VGU Online BBA", "top_hiring_partners_course": "<ul><li>Flipkart</li><li>EY</li><li>Deloitte</li></ul>",
+               "placement_content": "<p>Some organizations include:</p><ul><li>Flipkart</li><li>EY</li><li>Deloitte, etc</li></ul>",
+               "duration": "3 Years", "validity": "3 Years", "num_specializations": "0 (Not offered)",
+               "admission_heading": "VGU Admission", "admission_steps": "<p>Apply online.</p>"}
+    parsed = {"vgu": {"page_type": "course", "payload": payload}}
+    rules = regression.check_all(parsed)["vgu"]["rules"]
+    assert rules["Hiring partners shown once"] is None          # removed at publish
+    assert rules["Validity not copied from duration"] is None   # dropped at publish
+    assert rules["No 'not mentioned' values"] is None
+    assert rules["Admission steps are one list"] == "0 step(s)"  # still caught: needs the document fixed

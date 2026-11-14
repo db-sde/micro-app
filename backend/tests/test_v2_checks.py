@@ -139,10 +139,20 @@ def test_programs_table_must_have_every_row() -> None:
     assert run({"programs_table": rows}, page_type="university", markdown="MBA MCA BBA BCA M.Com", tables=[table]) == []
 
 
-def test_partner_list_must_be_clean_names() -> None:
-    flags = run({"top_hiring_partners_course": "Infosys, Larsen &amp; Toubro, ANZ, etc."},
-                markdown="Infosys Larsen & Toubro ANZ etc")
-    assert codes(flags, "top_hiring_partners_course") == ["partners_etc", "partners_markup"]
+def test_partner_chips_must_be_company_names() -> None:
+    flags = run({"top_hiring_partners_course": "<ul><li>Infosys</li><li>BFSI</li><li>leaders in IT (30%)</li><li>ANZ, etc.</li></ul>"},
+                markdown="Infosys BFSI leaders in IT (30%) ANZ etc")
+    assert sorted(codes(flags, "top_hiring_partners_course")) == ["partners_etc", "partners_not_companies"]
+    clean = run({"top_hiring_partners_course": "<ul><li>Infosys</li><li>Larsen &amp; Toubro</li><li>ANZ</li></ul>"},
+                markdown="Infosys Larsen & Toubro ANZ")
+    assert codes(clean, "top_hiring_partners_course") == []
+
+
+def test_partner_names_repeated_in_the_placement_text_are_flagged() -> None:
+    flags = run({"top_hiring_partners_course": "<ul><li>Infosys</li><li>Wipro</li><li>TCS</li></ul>",
+                 "placement_content": "<p>Recruiters include:</p><ul><li>Infosys</li><li>Wipro</li><li>TCS, etc.</li></ul>"},
+                markdown="Recruiters include Infosys Wipro TCS etc")
+    assert "hiring_partner_names_repeated" in codes(flags, "placement_content")
 
 
 def test_guaranteed_placement_only_if_the_document_says_so() -> None:

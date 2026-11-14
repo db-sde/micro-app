@@ -78,7 +78,8 @@ def test_sent_once_wordpress_has_them(page_type, monkeypatch) -> None:
         assert sent.get(wp_key) == value, wp_key
     # the copies keep going to their existing fields too
     if page_type == "specialization":
-        assert sent["jobs_content"] == SPEC["jobs_content"]
+        # the job paragraph goes to one field only (both were shown on the page)
+        assert sent["jobs_content"] is None
         assert sent["syllabus_description"] == SPEC["syllabus_description"]
     else:
         assert sent["course_syllabus_description"] == COURSE["course_syllabus_description"]

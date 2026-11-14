@@ -223,6 +223,8 @@ def _count_checks(payload: dict[str, Any]) -> list[dict[str, str]]:
 def _admission_checks(payload: dict[str, Any]) -> list[dict[str, str]]:
     flags = []
     steps_html = payload.get("admission_steps")
+    if payload.get("admission_heading") and not (isinstance(steps_html, str) and steps_html.strip()):
+        flags.append(flag("admission_steps", "steps_missing", WARNING, "The document has an admission section but no steps were found."))
     if isinstance(steps_html, str) and steps_html.strip():
         lists = re.findall(r"<(ol|ul)\b", steps_html, re.I)
         if not lists:
@@ -319,15 +321,28 @@ def _completeness_checks(payload: dict[str, Any], tables: list[list[list[str]]],
 
 
 def _partner_checks(payload: dict[str, Any], page_type: str) -> list[dict[str, str]]:
-    key = {"course": "top_hiring_partners_course", "specialization": "hiring_partners_specialization"}.get(page_type)
-    value = payload.get(key) if key else None
-    if not isinstance(value, str) or not value.strip():
-        return []
+    """CONTENT_MAP.md: company names only in the partner chips, bank names only
+    in the partner-bank chips, each shown once."""
+    from pipeline import wordpress_client as wc
+
     flags = []
-    if re.search(r"\betc\.?", value, re.I):
-        flags.append(flag(key, "partners_etc", WARNING, "Partner list still contains 'etc.'."))
-    if "&amp;" in value or "<" in value:
-        flags.append(flag(key, "partners_markup", WARNING, "Partner names contain HTML or entities."))
+    key = wc._PARTNER_FIELD.get(page_type)
+    items = wc._list_items(payload.get(key) or "") if key else []
+    if items:
+        odd = [x for x in items if re.search(r"\d|%", x) or wc._SECTOR_WORDS.match(x.strip()) or x[:1].islower()]
+        if odd:
+            flags.append(flag(key, "partners_not_companies", WARNING,
+                              f"Not company names: {odd[:4]}. Only company names belong in the partner chips."))
+        if any(re.search(r"\betc\.?$", x, re.I) for x in items):
+            flags.append(flag(key, "partners_etc", WARNING, "Partner list still contains 'etc.'."))
+    for names_key, text_key, label in ((key, "placement_content", "Hiring partner"),
+                                       (wc._BANK_FIELD.get(page_type), "emi_content", "Bank")):
+        names = {wc._name_key(n) for n in wc._list_items(payload.get(names_key) or "")} - {""} if names_key else set()
+        text = wc._name_key(plain(payload.get(text_key) or ""))
+        repeated = [n for n in names if n and f" {n} " in f" {text} "]
+        if len(repeated) >= 2:
+            flags.append(flag(text_key, f"{label.lower().replace(' ', '_')}_names_repeated", INFO,
+                              f"{label} names also appear in this text; they're removed when published (shown once, as chips)."))
     return flags
 
 

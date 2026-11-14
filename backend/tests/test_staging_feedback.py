@@ -10,11 +10,12 @@ from pipeline.validator import validate_payload
 PARTNERS = "<ul><li>Pepsi</li><li>Amazon</li><li>HCL</li></ul>"
 
 
-def test_galgotias_note_after_the_steps_leaves_the_steps_box():
+def test_additional_info_after_the_steps_shows_under_the_list_not_as_steps():
     html = ("<p>The admission process:</p><ol><li><strong>Step 1.</strong> Register.</li><li><strong>Step 2.</strong> Pay.</li></ol>"
             "<p>Note: The application fee is INR 1,200 /- (non-refundable).</p>")
     out = wc._polish_for_wordpress({"admission_steps": html}, "specialization")
-    assert out["admission_steps"].endswith("</ol>") and "INR 1,200" not in out["admission_steps"]
+    assert out["admission_steps"].endswith("</ol><p>Note: The application fee is INR 1,200 /- (non-refundable).</p>")
+    assert out["admission_steps"].count("<li>") == 2  # not an extra step
     assert not out.get("admission_fee_note")  # typed by the team
 
 
@@ -225,3 +226,44 @@ def test_isb_marketing_online_is_renamed_too(monkeypatch):
                             "_meta": {"document_title": "Copy of Copy of ISB Executive MBA in Marketing Online.docx"}},
                            "specialization", status="draft")
     assert fake.sent_title() == "Executive MBA in Marketing"
+
+
+def test_partner_list_ending_in_etc_is_still_recognised_as_a_duplicate():
+    """VGU / Jamia / DY Patil: the doc's last item 'Deloitte, etc' didn't match the chip 'Deloitte'."""
+    acf = {"top_hiring_partners_course": "<ul><li>Flipkart</li><li>EY</li><li>Deloitte</li></ul>",
+           "placement_content": "<p>Career services are offered.</p><p>Some organizations where graduates work include:</p>"
+                                "<ul><li>Flipkart</li><li>EY</li><li>Deloitte, etc</li></ul>"}
+    wc._dedupe_partner_list(acf, "course")
+    assert acf["placement_content"] == "<p>Career services are offered.</p>"
+
+
+def test_bank_names_are_not_repeated_in_the_emi_text():
+    """UPES: banks in the EMI text and again as Partner Banks chips."""
+    acf = {"partner_banks_names": "<ul><li>Axis Bank</li><li>State Bank of India</li><li>Credila (HDFC Bank)</li></ul>",
+           "emi_content": "<p>EMI ranges from 10 to 36 months.</p><p>A few tie-ups of UPES Online that facilitate the loan facility are mentioned below:</p>"
+                          "<ul><li>Axis Bank</li><li>State Bank of India</li><li>Credila (HDFC Bank)</li></ul>"}
+    wc._dedupe_bank_list(acf, "university")
+    assert acf["emi_content"] == "<p>EMI ranges from 10 to 36 months.</p>"
+
+
+def test_sectors_are_not_partner_chips():
+    """IMT: 'leaders in IT (30%)', 'services', 'BFSI', 'consulting' showed as hiring partners."""
+    acf = {"placement_highlights": "<ul><li>leaders in IT (30%)</li><li>services</li><li>BFSI</li><li>consulting</li><li>telecom</li></ul>"}
+    wc._keep_company_chips(acf, "university")
+    assert acf["placement_highlights"] is None
+    ok = {"top_hiring_partners_course": "<ul><li>Amazon</li><li>Deloitte</li><li>Infosys</li></ul>"}
+    wc._keep_company_chips(ok, "course")
+    assert ok["top_hiring_partners_course"] == "<ul><li>Amazon</li><li>Deloitte</li><li>Infosys</li></ul>"
+
+
+def test_parul_msc_online_title_names_the_program():
+    from pipeline.enricher import specialization_display_name
+    assert specialization_display_name("Copy of Parul University MSc Online in Applied Mathematics.docx") == "Online MSc in Applied Mathematics"
+
+
+def test_programs_intro_and_facts_come_from_the_document():
+    from pipeline.v2.field_guide import describe
+    from pipeline.v2.schema import extracted_fields
+    keys = {f["key"] for f in extracted_fields("university")}
+    assert "programs_intro" in keys  # the document's paragraph; AI-written only if missing
+    assert "Quick Facts" in describe("university", "facts")

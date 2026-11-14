@@ -441,9 +441,11 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
         note_text = _plain(note)
         if _STEP_RE.match(note_text) or (len(note_text) > 15 and note_text.lower().rstrip(".") in steps_text):
             acf["admission_fee_note"] = None
-    # Text after the last step is left out of the steps box (it showed
-    # misaligned under the numbered list). The fee note is typed by the team;
-    # the Validation screen offers that text as a suggestion.
+    # Text after the last step ("Additional information …") is shown under the
+    # numbered list as its own block (CONTENT_MAP.md). The fee note itself is
+    # typed by the team; the Validation screen offers that text as a suggestion.
+    if extra_note:
+        acf["admission_steps"] = f"{acf['admission_steps']}<p>{_escape_html(extra_note)}</p>"
 
     # 4b. Hiring partners as a list of company names (chips).
     _fix_partner_lists(acf, page_type)
@@ -614,42 +616,50 @@ def _stat_without_lead_in(sentence: str) -> str | None:
     return (cut + ".") if cut and cut != sentence.rstrip(":") else None
 
 
-def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
-    """The theme shows hiring partners as chips from their own field; the
-    same names as a bullet list in placement_content showed them twice
-    (Symbiosis BBA, Sharda Finance). Remove that list and its lead-in line."""
-    key = _PARTNER_FIELD.get(page_type)
-    names = {n.lower() for n in _list_items(acf.get(key) or "")} if key else set()
-    html = acf.get("placement_content")
+def _name_key(name: str) -> str:
+    """Comparable form of a company / bank name: 'Deloitte, etc' == 'Deloitte'."""
+    return re.sub(r"[^a-z0-9&]+", " ", _clean_partner(name).lower()).strip()
+
+
+_BANK_LEAD_RE = re.compile(r"\b(bank|banks|lender\w*|loan\w*|financ\w*|tie-?ups?|nbfc\w*|emi partner\w*|partner\w*)\b", re.I)
+
+
+def _remove_names_from_text(acf: dict[str, Any], names_key: str, text_key: str, lead_re: re.Pattern) -> None:
+    """Names the theme shows as chips (hiring partners, partner banks) must
+    not appear again in the section text: as a list, a sentence naming them,
+    or the line introducing them. Names match loosely ('Deloitte, etc' ==
+    'Deloitte'); a stat in the lead-in sentence is kept."""
+    names = {_name_key(n) for n in _list_items(acf.get(names_key) or "")} - {""}
+    html = acf.get(text_key)
     if len(names) < 2 or not isinstance(html, str):
         return
     blocks = list(re.finditer(r"<(p|ul|ol)\b[^>]*>(.*?)</\1>", html, re.I | re.S))
     drop: set[int] = set()
     replace: dict[int, str] = {}
+    need = max(2, min(3, len(names) - 1))
     for i, m in enumerate(blocks):
         if m.group(1).lower() == "p":
             # "Deloitte, PayPal, Tata Communications, ... are among the leading
-            # hiring partners": the same names as the chips, written inline.
-            # Drop that sentence; keep the paragraph's other sentences.
+            # hiring partners": drop that sentence, keep the paragraph's others.
             text = _plain(m.group(2))
             sentences = re.split(r"(?<=[.!?])\s+", text)
-            kept_sentences = [s for s in sentences if sum(1 for n in names if n in s.lower()) < max(3, len(names) - 1)]
+            kept_sentences = [x for x in sentences if sum(1 for n in names if n and n in _name_key(x)) < need]
             if len(kept_sentences) < len(sentences):
                 if kept_sentences:
                     replace[i] = f"<p>{_escape_html(' '.join(kept_sentences))}</p>"
                 else:
                     drop.add(i)
             continue
-        items = [x.lower() for x in _list_items(m.group(0))]
-        if len(items) >= 2 and all(x in names for x in items):
+        items = [_name_key(x) for x in _list_items(m.group(0))]
+        if len(items) >= 2 and sum(1 for x in items if x in names) >= max(2, len(items) - 1):
             drop.add(i)
             prev = blocks[i - 1] if i else None
-            if prev is not None and prev.group(1).lower() == "p":
+            if prev is not None and prev.group(1).lower() == "p" and i - 1 not in replace:
                 lead = _plain(prev.group(2))
-                if lead.endswith(":") and _PARTNER_LEAD_RE.search(lead):
+                if lead.endswith(":") and lead_re.search(lead):
                     # Drop only the lead-in sentence; keep anything before it,
-                    # and keep a stat it carries ("has 800+ recruiters, some of
-                    # whom are:" -> "has 800+ recruiters.").
+                    # and a stat it carries ("has 800+ recruiters, some of whom
+                    # are:" -> "has 800+ recruiters.").
                     sentences = re.split(r"(?<=[.!?])\s+", lead)
                     last = _stat_without_lead_in(sentences[-1])
                     rest = " ".join([*sentences[:-1], *([last] if last else [])]).strip()
@@ -662,11 +672,45 @@ def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
     kept, pos = [], 0
     for i, m in enumerate(blocks):
         if i in drop or i in replace:
-            kept.append(html[pos:m.start()] + replace.get(i, ""))
+            kept.append(html[pos:m.start()] + ("" if i in drop else replace.get(i, "")))
             pos = m.end()
     kept.append(html[pos:])
-    cleaned = "".join(kept).strip()
-    acf["placement_content"] = cleaned or None
+    acf[text_key] = "".join(kept).strip() or None
+
+
+def _dedupe_partner_list(acf: dict[str, Any], page_type: str) -> None:
+    """Hiring partners shown once, as chips (LPU, VGU, Jamia, DY Patil showed them twice)."""
+    key = _PARTNER_FIELD.get(page_type)
+    if key:
+        _remove_names_from_text(acf, key, "placement_content", _PARTNER_LEAD_RE)
+
+
+_BANK_FIELD = {"university": "partner_banks_names", "course": "partner_banks_course", "specialization": "partner_banks_specialization"}
+
+
+def _dedupe_bank_list(acf: dict[str, Any], page_type: str) -> None:
+    """Partner banks shown once, as chips (UPES showed them in the EMI text too)."""
+    key = _BANK_FIELD.get(page_type)
+    if key:
+        _remove_names_from_text(acf, key, "emi_content", _BANK_LEAD_RE)
+
+
+_SECTOR_WORDS = re.compile(r"^(it|bfsi|fmcg|services?|consulting|telecom\w*|manufacturing|retail|healthcare|banking|finance|"
+                           r"e-?commerce|edtech|fintech|pharma\w*|automobile|education|media|logistics|others?)$", re.I)
+
+
+def _keep_company_chips(acf: dict[str, Any], page_type: str) -> None:
+    """Partner chips hold company names only. IMT's 'leaders in IT (30%)',
+    'BFSI', 'consulting' are sectors: drop such items, and the whole list
+    when most of it isn't companies."""
+    key = _PARTNER_FIELD.get(page_type)
+    items = _list_items(acf.get(key) or "") if key else []
+    if not items:
+        return
+    good = [x for x in items if not re.search(r"\d|%", x) and not _SECTOR_WORDS.match(x.strip()) and not x[:1].islower()]
+    if len(good) == len(items):
+        return
+    acf[key] = _names_as_list(good) if len(good) >= 2 and len(good) * 2 > len(items) else None
 
 
 def _syllabus_years_from_content(acf: dict[str, Any], page_type: str) -> dict[str, Any]:
@@ -863,6 +907,9 @@ _PUBLISH_FIELD_RENAMES: dict[str, dict[str, str]] = {
 # created, with no code change. Copies: the source keeps going to its own
 # field too.
 _PENDING_WP_FIELDS: dict[str, dict[str, str]] = {
+    "university": {
+        "accreditation_paragraph": "accreditations_intro",
+    },
     "course": {
         "accreditation_paragraph": "accreditations_intro",
         "eligibility_criteria_paragraph": "eligibility_intro",
@@ -1573,13 +1620,19 @@ def publish_payload(
     for key, value in syllabus_extras.items():
         if not acf_fields.get(key):
             acf_fields[key] = value
+    _keep_company_chips(acf_fields, page_type)
     _dedupe_partner_list(acf_fields, page_type)
+    _dedupe_bank_list(acf_fields, page_type)
     for key, value in _syllabus_years_from_content(acf_fields, page_type).items():
         acf_fields[key] = value
 
     # Section intro paragraphs etc. under the WordPress team's new field
     # names, only for fields WordPress already has (see _PENDING_WP_FIELDS).
     acf_fields.update(_pending_wp_fields(payload, acf_fields, page_type, post_type))
+    if page_type == "specialization" and acf_fields.get("job_profiles_section_paragraph"):
+        # Both job paragraph fields were shown, so the text appeared twice.
+        # Keep the new one; send the old one empty so republishing clears it.
+        acf_fields["jobs_content"] = None
 
     taxonomy_terms, taxonomy_warnings = _derive_taxonomies(payload, acf_fields, page_type)
 

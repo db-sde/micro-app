@@ -89,18 +89,26 @@ COMMON: dict[str, str] = {
         "(notes, 'Important instructions', 'Additional information') is NOT a step: keep it after the </ol> as <p> "
         "paragraphs. Do not start with the section heading."
     ),
-    "emi_content": "Body of the EMI / financing section as clean HTML. Do not start with the section heading.",
+    "emi_content": ("Body of the EMI / financing section as clean HTML. Leave out the names of banks / lenders (they go to "
+                    "the partner banks field and are shown there) and the sentence that only introduces them. Do not start with "
+                    "the section heading."),
     "exam_content": "Body of the examination section as clean HTML. Do not start with the section heading.",
     "faculty_intro": "The paragraph before the faculty list/table, as plain text. Not the list itself.",
     "placement_content": (
         "Body of the placement section as clean HTML, kept as written. Services or items written one per line become a <ul> "
-        "with one <li> each. Do not claim guaranteed placement unless the "
+        "with one <li> each. Keep stats (e.g. '500+ hiring partners', 'average package INR 7 LPA'). Leave out the names of "
+        "hiring partners / recruiters, whether a list or a sentence naming them, and the line that only introduces them: "
+        "they go to the hiring partners field and are shown there. Do not claim guaranteed placement unless the "
         "document says so (some only list where alumni work). Do not start with the section heading."
     ),
     "syllabus_content": "The whole syllabus as clean HTML: <h3> per year, <h4> per semester, a <ul> of every subject. Keep every semester and every subject.",
     "certificate_description": "The certificate/degree description from the document, as plain text.",
     "specializations_intro": "One-line subtitle above the specialization list, from the document (e.g. 'Choose from 8 career-focused specializations').",
-    "facts": "Quick facts as rows: fact_title (the label, e.g. 'Duration') and fact_description (its value). One row per fact, all of them.",
+    "programs_intro": ("The document's paragraph just above the programs / courses offered table, as plain text. Empty if "
+                       "there is none (a subtitle is then written from the facts)."),
+    "facts": ("The rows of the document's '<University> facts' section (tagged [facts] or titled '… facts'): fact_title (the "
+              "point's bold label) and fact_description (the rest). NOT the 'Quick Facts' key-value block at the top of the "
+              "document (full name, established year, NAAC grade, starting fee…): those feed other fields. All rows."),
     "accreditations": "One row per approval/accreditation body: body_name (e.g. 'NAAC'), body_descriptor (e.g. 'A+ Grade'), body_detail (extra detail as written). All of them.",
     "course_accreditations": "One row per approval/accreditation body: course_body_name (e.g. 'NAAC'), course_body_descriptor (e.g. 'A+ Grade'), course_body_detail. All of them.",
     "programs_table": "Every program in the programs/fees table, one row each (program_name, program_fee, program_eligibility). Never drop rows: a table with 5 programs gives 5 rows.",
@@ -150,7 +158,8 @@ _COURSE: dict[str, str] = {
     "top_hiring_partners_course": (
         "Hiring partners / recruiters / companies where alumni work, as a clean HTML <ul> with one <li> per company name "
         "(e.g. <ul><li>Infosys</li><li>KPMG</li></ul>; names only, no 'etc.'), shown as chips on the page. From a lead-in "
-        "line followed by short name lines, or an inline 'include A, B, C, etc.'. Empty if no company is named."
+        "line followed by short name lines, or an inline 'include A, B, C, etc.'. Company names only: never sectors or "
+        "industries ('BFSI', 'IT', 'consulting'), percentages, services or stats. Empty if no company is named."
     ),
     "scholarship_facility": (
         "Scholarships or fee relief the document describes (who qualifies, how much, e.g. merit or need-based, defence "
@@ -187,7 +196,8 @@ _UNIVERSITY: dict[str, str] = {
     "placement_highlights": (
         "The university's top hiring partners (shown as 'Top Hiring Partners' chips): a clean HTML <ul> with one <li> per "
         "company name the document lists as a recruiter or hiring partner (e.g. <ul><li>Amazon</li><li>Deloitte</li></ul>). "
-        "Names only; not statistics such as '500+ hiring partners' and not services. Empty if no company is named."
+        "Company names only: never sectors or industries ('BFSI', 'IT (30%)', 'consulting'), statistics or services. "
+        "Empty if no company is named."
     ),
     "examination_cards": (
         "The examination process as short cards, one row per point: exam_card_title (e.g. 'Exam Mode', 'Evaluation', "

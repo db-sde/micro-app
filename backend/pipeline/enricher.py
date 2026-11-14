@@ -312,8 +312,13 @@ def specialization_display_name(filename: str) -> str | None:
         return None
     left = m.group(1).strip()
     online = re.search(r"\bonline\b", left, re.IGNORECASE)
-    if online:
+    if online and _DEGREE_RE.search(left[online.end():]):
         degree = "Online" + left[online.end():]
+    elif online and _DEGREE_RE.search(left[: online.start()]):
+        # "Parul University MSc Online in Applied Mathematics" -> "Online MSc"
+        before = left[: online.start()]
+        first = _DEGREE_RE.search(before)
+        degree = "Online " + before[first.start():].strip()
     else:
         first = _DEGREE_RE.search(left)
         if not first:
