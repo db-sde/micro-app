@@ -1106,8 +1106,10 @@ def _derive_taxonomies(
             result["institution"] = [term_id]
 
     if "discipline" in applicable and spec_name.strip():
-        slug = _slugify(spec_name)
-        term_id = _get_or_create_term_id("discipline", spec_name.strip(), slug, True)
+        from pipeline.enricher import specialization_short_name
+        discipline = specialization_short_name(spec_name)
+        slug = _slugify(discipline)
+        term_id = _get_or_create_term_id("discipline", discipline, slug, True)
         if term_id:
             result["discipline"] = [term_id]
 
@@ -1409,6 +1411,18 @@ def publish_payload(
                 "PUBLISH_COERCED_STRING_TO_REPEATER: page_type=%s field=%s",
                 page_type, key,
             )
+
+    if page_type == "specialization":
+        # Page name with its program ("Online MBA in Finance Management"),
+        # also for uploads parsed before this rule.
+        from pipeline.enricher import specialization_display_name
+        doc_title = str((payload.get("_meta") or {}).get("document_title") or "")
+        full = specialization_display_name(doc_title) if doc_title else None
+        current = str(acf_fields.get("spec_name") or "")
+        bare = re.sub(r"\s+online$", "", current.strip(), flags=re.I).lower()  # "Marketing Online" (ISB title)
+        if full and bare and bare in full.lower() and current.lower() != full.lower():
+            acf_fields["spec_name"] = full
+            payload = {**payload, "spec_name": full}  # the post title is built from the payload
 
     acf_fields = _polish_for_wordpress(acf_fields, page_type)
     syllabus_extras = _syllabus_extras(acf_fields, page_type)

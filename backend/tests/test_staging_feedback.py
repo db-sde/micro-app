@@ -181,3 +181,47 @@ def test_partner_names_written_in_a_sentence_are_not_repeated_under_the_chips():
     wc._dedupe_partner_list(acf, "course")
     assert acf["placement_content"] == ("<p>With 500+ active hiring partners, SMU offers the right opportunity.</p>"
                                         "<p>Placement support is free.</p>")
+
+
+@pytest.mark.parametrize("title,name", [
+    ("Copy of Sikkim Manipal Online MBA in Finance Management.docx", "Online MBA in Finance Management"),
+    ("Copy of Copy of ISB Executive MBA in Marketing Online.docx", "Executive MBA in Marketing"),
+    ("Copy of IMT Ghaziabad online EMBA in Strategy.docx", "Online EMBA in Strategy"),
+    ("Copy of MDU Online MSc in Mathematics.docx", "Online MSc in Mathematics"),
+    ("Copy of Sikkim Manipal University Online BBA in Operations & Supply Chain Management.docx",
+     "Online BBA in Operations & Supply Chain Management"),
+])
+def test_specialization_page_name_includes_its_program(title, name):
+    """The hero section shows the page name: 'Finance Management' alone didn't say which program."""
+    from pipeline.enricher import specialization_display_name, specialization_short_name
+    from pipeline.v2 import derive
+    assert specialization_display_name(title) == name
+    payload = {"spec_name": "Finance"}
+    derive.apply_title_name(payload, "specialization", title)
+    assert payload["spec_name"] == name
+    assert specialization_short_name(name) == name.split(" in ", 1)[1]
+
+
+@pytest.mark.usefixtures("allow_mock_transport")
+def test_older_uploads_get_the_full_name_when_republished(monkeypatch):
+    from evals.projection import FakeWordPress, _fake_site
+    monkeypatch.setattr(wc, "_get_live_acf_field_types", lambda post_type: {"spec_name": ["string", "null"]})
+    fake = FakeWordPress()
+    payload = {"spec_name": "Finance Management",
+               "_meta": {"document_title": "Copy of Sikkim Manipal Online MBA in Finance Management.docx"}}
+    with _fake_site(fake, raw=False):
+        wc.publish_payload(payload, "specialization", status="draft")
+    assert fake.sent_acf()["spec_name"] == "Online MBA in Finance Management"
+    assert fake.sent_title() == "Online MBA in Finance Management"
+
+
+@pytest.mark.usefixtures("allow_mock_transport")
+def test_isb_marketing_online_is_renamed_too(monkeypatch):
+    from evals.projection import FakeWordPress, _fake_site
+    monkeypatch.setattr(wc, "_get_live_acf_field_types", lambda post_type: {})
+    fake = FakeWordPress()
+    with _fake_site(fake, raw=False):
+        wc.publish_payload({"spec_name": "Marketing Online",
+                            "_meta": {"document_title": "Copy of Copy of ISB Executive MBA in Marketing Online.docx"}},
+                           "specialization", status="draft")
+    assert fake.sent_title() == "Executive MBA in Marketing"

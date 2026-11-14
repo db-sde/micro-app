@@ -288,7 +288,47 @@ def specialization_from_title(filename: str) -> str | None:
         return None
     spec = re.sub(r"\b(specialization|specialisation|program|programme|course|page)\b", "", m.group(1), flags=re.IGNORECASE)
     spec = re.sub(r"\s{2,}", " ", spec).strip(" -_&,")
+    spec = re.sub(r"\s+online$", "", spec, flags=re.IGNORECASE).strip()  # "… in Marketing Online"
     return spec if 2 <= len(spec) <= 80 else None
+
+
+_DEGREE_RE = re.compile(
+    r"\b(?:executive|post\s*graduate|pg|e?mba|bba|bca|mca|m\.?sc|b\.?sc|m\.?com|b\.?com|m\.?a|b\.?a|pgdm|pgd\w*|dba|ph\.?d|diploma)\b", re.I)
+
+
+def specialization_display_name(filename: str) -> str | None:
+    """The page name of a specialization: its program and specialization,
+    as the hero section shows it and as the team names these pages
+    ("Online MBA in Finance Management", "Online BA in English").
+
+    "Copy of Sikkim Manipal Online MBA in Finance Management" -> "Online MBA in Finance Management"
+    "Copy of ISB Executive MBA in Marketing Online"           -> "Executive MBA in Marketing"
+    None when the title has no recognisable program part.
+    """
+    spec = specialization_from_title(filename)
+    name = clean_filename(filename or "")
+    m = re.search(r"^(.*?)\s+in\s+", name, re.IGNORECASE)
+    if not spec or not m:
+        return None
+    left = m.group(1).strip()
+    online = re.search(r"\bonline\b", left, re.IGNORECASE)
+    if online:
+        degree = "Online" + left[online.end():]
+    else:
+        first = _DEGREE_RE.search(left)
+        if not first:
+            return None
+        degree = left[first.start():]
+    degree = re.sub(r"\s{2,}", " ", degree).strip()
+    if not _DEGREE_RE.search(degree):
+        return None
+    return f"{degree} in {spec}"
+
+
+def specialization_short_name(spec_name: str) -> str:
+    """'Online MBA in Finance Management' -> 'Finance Management'."""
+    m = re.search(r"\bin\s+(.+)$", spec_name or "", re.IGNORECASE)
+    return m.group(1).strip() if m and _DEGREE_RE.search(spec_name[: m.start()]) else (spec_name or "").strip()
 
 
 def _enrich_course_name(

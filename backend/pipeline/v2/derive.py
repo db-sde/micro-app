@@ -21,7 +21,7 @@ import re
 from typing import Any
 
 from pipeline.docx_parser import _parse_standard_table, _skip_merged_title_rows
-from pipeline.enricher import _derive_specialization_fees, specialization_from_title, summarize_eligibility
+from pipeline.enricher import _derive_specialization_fees, specialization_display_name, specialization_from_title, summarize_eligibility
 from pipeline.v2.field_guide import HEADING_LABELS, PAGE_NAME_FIELD
 
 PLACEHOLDER_RE = re.compile(
@@ -134,6 +134,12 @@ def apply_title_name(payload: dict[str, Any], page_type: str, filename: str) -> 
         return []
     from_title = specialization_from_title(filename)
     current = str(payload.get("spec_name") or "")
+    # The page name includes the program ("Online MBA in Finance
+    # Management"): the hero section shows it, and the team names pages so.
+    full = specialization_display_name(filename)
+    if full and current.lower() != full.lower():
+        payload["spec_name"] = full
+        return [_record("spec_name", "title_name")]
     if from_title and from_title.lower() not in current.lower():
         payload["spec_name"] = from_title
         return [_record("spec_name", "title_name")]
