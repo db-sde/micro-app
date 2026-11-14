@@ -311,6 +311,14 @@ def _fix_faculty_members(rows: Any) -> Any:
 # without re-parsing the document.
 
 _PLACEHOLDER_RE = re.compile(r"^\s*(n/?a|na|nil|none|null|not available|not applicable|not mentioned|not specified|-+|—)\s*\.?\s*$", re.I)
+_NOT_GIVEN_RE = re.compile(
+    r"\bnot\s+(?:been\s+)?(?:mentioned|available|specified|applicable|offered|given|provided|disclosed|stated)\b|\bn/a\b", re.I)
+# Short value fields that show as a stat or badge; free text fields aren't touched.
+_VALUE_FIELDS = {
+    "validity", "program_validity", "certificate_validity", "emi_amount", "num_specializations", "num_programs",
+    "nirf_rank", "naac_grade", "ugc_status", "ugc_approved", "duration", "starting_fee", "total_fee",
+    "established_year", "emi_interest_rate_value", "course_amount_range", "specialization_lowest_emi_strats_from",
+}
 _LEADING_HEADING_RE = re.compile(r"^\s*<h[1-6][^>]*>.*?</h[1-6]>\s*", re.I | re.S)
 _MONEY_RE = re.compile(r"(₹|\binr\b|\brs\.?\s|\d[\d,]*\s*/-)", re.I)
 _STEP_RE = re.compile(r"^\s*(?:<strong>)?\s*step\s*\d+", re.I)
@@ -391,10 +399,18 @@ def _normalize_admission_steps(html: str) -> tuple[str, str | None]:
 
 def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]:
     """Clean extracted values into what reads correctly on the page."""
-    # 1. Placeholders ("N/A", "NA", "-") would be shown verbatim.
+    # 1. Placeholders ("N/A", "NA", "-") would be shown verbatim, and so
+    #    would a document's own "not given" wording in a value field
+    #    ("Validity is also not Mentioned", "EMI is not offered by The
+    #    University"): those fields stay empty when the document lacks them.
     for key, value in list(acf.items()):
-        if isinstance(value, str) and _PLACEHOLDER_RE.match(value):
+        if not isinstance(value, str):
+            continue
+        if _PLACEHOLDER_RE.match(value) or (key in _VALUE_FIELDS and _NOT_GIVEN_RE.search(value)):
             acf[key] = None
+    count = acf.get("num_specializations")
+    if count is not None and not re.search(r"[1-9]", str(count)):
+        acf["num_specializations"] = None  # "0 (Not offered)": no specializations means an empty field
 
     # 2. Content that repeats its section heading at the top rendered the
     #    heading twice ("Jain Online Examination process" + "Jain

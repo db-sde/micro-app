@@ -49,18 +49,20 @@ COMMON: dict[str, str] = {
     "mode": "Mode of learning as stated (e.g. 'Online', 'Hybrid').",
     "duration": "Program duration as a short value, e.g. '2 Years' or '24 Months'.",
     "validity": ("Program validity (the maximum time allowed to complete the program) exactly as stated, e.g. '4 Years'. "
-                 "Empty unless the document states it; never copy the program duration."),
+                 "Empty unless the document states it (also when it says validity is not mentioned); never copy the program duration."),
     "program_validity": ("Program validity (the maximum time allowed to complete the program) exactly as stated, e.g. '4 Years'. "
-                         "Empty unless the document states it; never copy the program duration."),
+                         "Empty unless the document states it (also when it says validity is not mentioned); never copy the program duration."),
     "num_programs": "Number of programs the university offers, as a short stat (e.g. '5+'). Only if stated or countable from the programs table.",
-    "num_specializations": "Number of specializations offered, as a short stat (e.g. '8+'). Only if stated or countable from a specialization list/table.",
+    "num_specializations": ("Number of specializations this program offers, as a short stat (e.g. '8+'). Only if stated or countable "
+                            "from its specialization list. Empty when it offers none (never '0' or 'Not offered')."),
     "starting_fee": "The lowest fee the page starts from, as written (e.g. 'INR 60,000 /-'). " + _MONEY,
     "total_fee": (
         "The complete program fee. If a fee table has a Total row, use it; if there are several totals "
         "(e.g. with and without Pay After Placement), use the LOWEST total. Never a single year or semester. "
         "Empty if fees only vary by specialization and no single total is given. " + _MONEY
     ),
-    "emi_amount": "Monthly EMI amount as written (e.g. 'INR 6,927/-'). Empty if no EMI amount is stated; never 'N/A'.",
+    "emi_amount": ("Monthly EMI amount as written (e.g. 'INR 6,927/-'). Empty if no EMI amount is stated or the document says EMI "
+                   "isn't offered; never 'N/A' or a sentence."),
     "admission_fee_note": (
         "One short note shown under the admission steps: the text that follows the last step "
         "(e.g. 'Additional information: …', 'Important instructions: …'), as plain text. It is never "

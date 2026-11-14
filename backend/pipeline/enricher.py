@@ -588,6 +588,14 @@ def _derive_specialization_fees(
                     fee = fee_for(row.get("other_spec_name"))
                     if fee:
                         row["other_spec_fee"] = fee
+            if keep_list and len(rows) >= 2 and not catch_all:
+                # The program's specialization fee table is its list: names
+                # from elsewhere in the document (NIU: "Retail management",
+                # "Agri business" with no fee) are not specializations of it.
+                def in_table(name: str) -> bool:
+                    key = (name or "").lower().strip()
+                    return bool(key) and any(key == k or key in k or k in key for k in by_name)
+                payload["other_specs"] = [r for r in others if isinstance(r, dict) and in_table(r.get("other_spec_name"))] or None
         if not re.search(r"\d", str(payload.get("total_fee") or "")):
             own = fee_for(str(payload.get("spec_name") or ""))
             if own:

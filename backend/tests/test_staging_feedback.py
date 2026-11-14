@@ -141,3 +141,31 @@ def test_eligibility_note_that_repeats_a_criterion_is_dropped():
 def test_validity_copied_from_the_duration_is_dropped():
     assert wc._polish_for_wordpress({"duration": "3 Years", "validity": "3 years"}, "course")["validity"] is None
     assert wc._polish_for_wordpress({"duration": "2 Years", "validity": "4 Years"}, "course")["validity"] == "4 Years"
+
+
+@pytest.mark.parametrize("key,value", [("program_validity", "Validity is also not Mentioned"),
+                                       ("emi_amount", "EMI is not offered by The University"),
+                                       ("validity", "Not specified"), ("num_specializations", "0 (Not offered)"),
+                                       ("num_specializations", "0")])
+def test_values_the_document_says_are_not_given_stay_empty(key, value):
+    """TNOU BCom / LPU BA pages showed 'Validity is also not Mentioned' and '0 (Not offered)'."""
+    assert wc._polish_for_wordpress({key: value}, "course")[key] is None
+
+
+def test_free_text_mentioning_not_offered_is_kept():
+    text = "<p>Since no specializations are offered, students gain a broad understanding.</p>"
+    assert wc._polish_for_wordpress({"about_content": text}, "course")["about_content"] == text
+    assert wc._polish_for_wordpress({"num_specializations": "8+"}, "course")["num_specializations"] == "8+"
+
+
+def test_other_specs_come_from_the_programs_fee_table():
+    """NIU MBA in Business Analytics: 'offered in 7 specializations', but 3 extra names without a fee were listed."""
+    from pipeline.v2 import derive
+    table = [["Specialization", "Fee per semester"], ["Finance", "INR 1,18,000 /-"], ["Marketing", "INR 1,18,000 /-"],
+             ["Business Analytics", "INR 1,18,000 /-"]]
+    payload = {"spec_name": "Business Analytics", "other_specs": [
+        {"other_spec_name": "Finance"}, {"other_spec_name": "Marketing"},
+        {"other_spec_name": "Retail management"}, {"other_spec_name": "Agri business"}]}
+    derive.apply_specialization_fees(payload, [table], "specialization")
+    assert [(r["other_spec_name"], r["other_spec_fee"]) for r in payload["other_specs"]] == [
+        ("Finance", "INR 1,18,000 /-"), ("Marketing", "INR 1,18,000 /-")]
