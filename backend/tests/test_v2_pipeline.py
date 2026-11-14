@@ -61,7 +61,7 @@ def test_response_keeps_the_v1_shape(result) -> None:
 
 def test_payload_values(result) -> None:
     payload = result["payload"]
-    assert payload["program_name"] == "UPES Online MBA"
+    assert payload["program_name"] == "UPES Online MBA program"  # the document's top line, as written
     assert payload["admission_steps"].startswith("<p>Follow these steps to apply:</p><ol><li><strong>Step 1.")
     assert not payload.get("admission_fee_note")  # typed in by the team, never extracted
     assert payload["emi_amount"] is None  # "N/A" from the model

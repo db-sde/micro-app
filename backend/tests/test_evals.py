@@ -221,8 +221,8 @@ def eval_dirs(tmp_path):
     spec["checks"] = [{"type": "html_list_items", "field": "admission_steps", "equals": 2},
                       {"type": "empty", "field": "admission_fee_note"}]   # typed in by the team, never extracted
     (d / "case.json").write_text(json.dumps(spec))
-    (d / "truth.json").write_text(json.dumps({"title": "UPES Online MBA", "acf": {
-        "program_name": "UPES Online MBA", "admission_steps": UPES_STEPS_HTML,
+    (d / "truth.json").write_text(json.dumps({"title": "UPES Online MBA program", "acf": {
+        "program_name": "UPES Online MBA program", "admission_steps": UPES_STEPS_HTML,
         "admission_fee_note": "Additional information: Keep scanned copies of your documents ready.",
         "course_amount_range": "INR 25,000 /- Semester – INR 40,000 /- Semester", "emi_amount": "", "faqs": []}}))
     return {"cases_dir": tmp_path / "cases", "cache_dir": tmp_path / "cache", "reports_dir": tmp_path / "reports"}

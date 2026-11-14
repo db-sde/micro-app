@@ -212,8 +212,8 @@ def test_older_uploads_get_the_full_name_when_republished(monkeypatch):
                "_meta": {"document_title": "Copy of Sikkim Manipal Online MBA in Finance Management.docx"}}
     with _fake_site(fake, raw=False):
         wc.publish_payload(payload, "specialization", status="draft")
-    assert fake.sent_acf()["spec_name"] == "Online MBA in Finance Management"
-    assert fake.sent_title() == "Online MBA in Finance Management"
+    assert fake.sent_acf()["spec_name"] == "Sikkim Manipal Online MBA in Finance Management"  # the document's top line
+    assert fake.sent_title() == "Sikkim Manipal Online MBA in Finance Management"
 
 
 @pytest.mark.usefixtures("allow_mock_transport")
@@ -225,7 +225,7 @@ def test_isb_marketing_online_is_renamed_too(monkeypatch):
         wc.publish_payload({"spec_name": "Marketing Online",
                             "_meta": {"document_title": "Copy of Copy of ISB Executive MBA in Marketing Online.docx"}},
                            "specialization", status="draft")
-    assert fake.sent_title() == "Executive MBA in Marketing"
+    assert fake.sent_title() == "ISB Executive MBA in Marketing Online"  # as the document writes it
 
 
 def test_partner_list_ending_in_etc_is_still_recognised_as_a_duplicate():
@@ -267,3 +267,34 @@ def test_programs_intro_and_facts_come_from_the_document():
     keys = {f["key"] for f in extracted_fields("university")}
     assert "programs_intro" in keys  # the document's paragraph; AI-written only if missing
     assert "Quick Facts" in describe("university", "facts")
+
+
+@pytest.mark.parametrize("markdown,title", [
+    ("# Sikkim Manipal Online MBA in Finance Management\n\nQuick facts:\n\nDuration - 2 years", "Sikkim Manipal Online MBA in Finance Management"),
+    ("# Amity University Online MBA program\n\n## [about_heading] About", "Amity University Online MBA program"),
+    ("DSU Online MBA in Artificial\n\nIntelligence\n\nQuick facts:\n\nDuration - 2 years", "DSU Online MBA in Artificial Intelligence"),
+    ("# Copy of [spec_name] UPES Online MBA in Marketing Management", "UPES Online MBA in Marketing Management"),
+    ("Quick facts:\n\nDuration - 2 years", None),
+])
+def test_hero_name_is_the_documents_top_line(markdown, title):
+    from pipeline.v2 import derive
+    assert derive.document_h1(markdown) == title
+    payload = {"spec_name": "Finance"}
+    derive.apply_document_name(payload, "specialization", markdown)
+    assert payload["spec_name"] == (title or "Finance")
+
+
+@pytest.mark.usefixtures("allow_mock_transport")
+def test_a_name_edited_by_hand_is_not_overwritten_at_publish(monkeypatch):
+    from evals.projection import FakeWordPress, _fake_site
+    monkeypatch.setattr(wc, "_get_live_acf_field_types", lambda post_type: {})
+    fake = FakeWordPress()
+    with _fake_site(fake, raw=False):
+        wc.publish_payload({"program_name": "Jamia Online MBA (Distance & Online)",
+                            "_meta": {"document_title": "Copy of Jamia Islamia Online MBA program.docx"}}, "course", status="draft")
+    assert fake.sent_title() == "Jamia Online MBA (Distance & Online)"
+    fake = FakeWordPress()
+    with _fake_site(fake, raw=False):
+        wc.publish_payload({"program_name": "Jamia Islamia Online MBA",
+                            "_meta": {"document_title": "Copy of Jamia Islamia Online MBA program.docx"}}, "course", status="draft")
+    assert fake.sent_title() == "Jamia Islamia Online MBA program"

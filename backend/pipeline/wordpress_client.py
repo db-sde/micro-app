@@ -343,13 +343,24 @@ def _plain(html: Any) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", str(html or ""))).strip()
 
 
+def _title_from_filename(filename: str) -> str | None:
+    """'Copy of Copy of Jamia Islamia Online MBA program (1).docx' -> 'Jamia Islamia Online MBA program'."""
+    name = re.sub(r"\.docx?$", "", filename.strip(), flags=re.I)
+    name = re.sub(r"^(?:(?:copy of|re[_:])\s*)+", "", name, flags=re.I)
+    name = re.sub(r"\s*\(\d+\)$", "", name)
+    name = re.sub(r"\s{2,}", " ", name).strip()
+    return name if len(name) >= 3 else None
+
+
 def _norm_words(text: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", _plain(text).lower()).strip()
 
 
 def _page_name(acf: dict[str, Any], page_type: str) -> str:
+    """Name for fallback headings ('UPES Online MBA program' -> 'UPES Online MBA')."""
     key = {"course": "program_name", "specialization": "spec_name"}.get(page_type, "university_name")
-    return str(acf.get(key) or acf.get("university_name") or "").strip()
+    name = str(acf.get(key) or acf.get("university_name") or "").strip()
+    return re.sub(r"\s+(?:program|programme|course|page)$", "", name, flags=re.I)
 
 
 def _normalize_admission_steps(html: str) -> tuple[str, str | None]:
@@ -1459,17 +1470,20 @@ def publish_payload(
                 page_type, key,
             )
 
-    if page_type == "specialization":
-        # Page name with its program ("Online MBA in Finance Management"),
-        # also for uploads parsed before this rule.
-        from pipeline.enricher import specialization_display_name
-        doc_title = str((payload.get("_meta") or {}).get("document_title") or "")
-        full = specialization_display_name(doc_title) if doc_title else None
-        current = str(acf_fields.get("spec_name") or "")
+    name_key = {"course": "program_name", "specialization": "spec_name"}.get(page_type)
+    if name_key:
+        # The hero shows the document's top line, complete and as written
+        # (CONTENT_MAP.md). Uploads parsed before this rule use the document
+        # title, which is the same line. A name edited by hand in the app
+        # (not part of that line) is left alone.
+        meta = payload.get("_meta") or {}
+        full = (meta.get("extraction") or {}).get("document_h1") or _title_from_filename(str(meta.get("document_title") or ""))
+        current = str(acf_fields.get(name_key) or "")
         bare = re.sub(r"\s+online$", "", current.strip(), flags=re.I).lower()  # "Marketing Online" (ISB title)
-        if full and bare and bare in full.lower() and current.lower() != full.lower():
-            acf_fields["spec_name"] = full
-            payload = {**payload, "spec_name": full}  # the post title is built from the payload
+        shorter = bare and (bare in full.lower() or _norm_words(bare) in _norm_words(full)) if full else False
+        if full and current and shorter and current != full:
+            acf_fields[name_key] = full
+            payload = {**payload, name_key: full}  # the post title is built from the payload
 
     acf_fields = _polish_for_wordpress(acf_fields, page_type)
     syllabus_extras = _syllabus_extras(acf_fields, page_type)

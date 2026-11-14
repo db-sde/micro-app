@@ -83,8 +83,13 @@ def null_placeholders(payload: dict[str, Any]) -> list[dict[str, str]]:
     return changes
 
 
+_NAME_TAIL = re.compile(r"\s+(?:program|programme|course|page)$", re.I)
+
+
 def page_name(payload: dict[str, Any], page_type: str) -> str:
-    return str(payload.get(PAGE_NAME_FIELD.get(page_type, "university_name")) or payload.get("university_name") or "").strip()
+    """The page name for fallback headings: 'UPES Online MBA program' -> 'UPES Online MBA'."""
+    name = str(payload.get(PAGE_NAME_FIELD.get(page_type, "university_name")) or payload.get("university_name") or "").strip()
+    return _NAME_TAIL.sub("", name)
 
 
 def apply_heading_fallbacks(payload: dict[str, Any], page_type: str, valid_keys: set[str],
@@ -144,6 +149,49 @@ def apply_title_name(payload: dict[str, Any], page_type: str, filename: str) -> 
         payload["spec_name"] = from_title
         return [_record("spec_name", "title_name")]
     return []
+
+
+_NAME_KEY = {"course": "program_name", "specialization": "spec_name"}
+_TOP_STOP = re.compile(r"^(quick facts?|linked[_ ]|[|\[]|#{2,}\s)|^\S[^:]{0,40}\s[-:–]\s\S", re.I)
+
+
+def clean_title_line(text: str) -> str:
+    text = re.sub(r"^#+\s*", "", text or "")
+    text = re.sub(r"\[[^\]]*\]", " ", text)                 # [field_tags]
+    text = re.sub(r"[*_`]+", "", text)                          # markdown emphasis
+    text = re.sub(r"^(?:copy of\s+)+", "", text.strip(), flags=re.I)
+    return re.sub(r"\s{2,}", " ", text).strip(" .:-")
+
+
+def document_h1(markdown: str) -> str | None:
+    """The line written at the top of the document, as the writers wrote it
+    ('Sikkim Manipal Online MBA in Finance Management'). A title the writer
+    broke over two lines ('DSU Online MBA in Artificial' / 'Intelligence')
+    is joined. Stops at the Quick facts block or the first section."""
+    lines = [ln.strip() for ln in (markdown or "").splitlines() if ln.strip()]
+    if not lines:
+        return None
+    if re.match(r"^#\s", lines[0]):
+        title = clean_title_line(lines[0])
+        return title if 3 <= len(title) <= 150 else None
+    parts = []
+    for ln in lines[:4]:
+        if _TOP_STOP.search(ln) or len(ln) > 90 or ln.endswith((":", ".")):
+            break
+        parts.append(ln)
+    title = clean_title_line(" ".join(parts))
+    return title if parts and 3 <= len(title) <= 150 else None
+
+
+def apply_document_name(payload: dict[str, Any], page_type: str, markdown: str) -> list[dict[str, str]]:
+    """Course and specialization pages show the document's top line in the
+    hero, complete and as written (CONTENT_MAP.md)."""
+    key = _NAME_KEY.get(page_type)
+    title = document_h1(markdown) if key else None
+    if not title or str(payload.get(key) or "") == title:
+        return []
+    payload[key] = title
+    return [_record(key, "document_h1")]
 
 
 def apply_copies(payload: dict[str, Any], page_type: str) -> list[dict[str, str]]:

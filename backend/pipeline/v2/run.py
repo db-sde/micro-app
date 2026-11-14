@@ -76,6 +76,7 @@ def run_v2(file_bytes: bytes, filename: str, forced_page_type: str | None, clien
     changes: list[dict[str, str]] = []
     changes += derive.null_placeholders(payload)
     changes += derive.apply_title_name(payload, page_type, filename)
+    changes += derive.apply_document_name(payload, page_type, doc.markdown)  # the hero shows the doc's top line
     changes += derive.apply_specialization_fees(payload, doc.tables, page_type)
     changes += derive.apply_copies(payload, page_type)
     valid_keys = {f["key"] for f in field_defs(page_type)}
@@ -125,6 +126,7 @@ def run_v2(file_bytes: bytes, filename: str, forced_page_type: str | None, clien
         "notes": extraction.notes,
         "generated": sorted(generated),
         "document_flags": [f for f in flags if f["field_key"] == "_document"],
+        "document_h1": derive.document_h1(doc.markdown),
     }
     logger.info("V2_DONE: file=%s type=%s cost=$%.4f usage=%s latency=%s flags=%d",
                 filename, page_type, meta["cost_usd"], meta["usage"], timings, len(flags))

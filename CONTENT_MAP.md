@@ -45,7 +45,8 @@ staging.degreebaba.com. The parser's own rules live in
 
 | Section on the page | Field(s) | Content |
 |---|---|---|
-| Hero / chips / glance | `program_name`, `ugc_status`, `naac_grade`, `mode`, `duration`, `program_duration`, `total_fee`, `best_price_value`, `emi_amount`, `num_specializations`, `program_validity` | `best_price_value` = lowest total fee. Empty values must be hidden, not shown as "N/A" ❓ (At a Glance shows "Validity N/A") |
+| Hero name | `program_name` | The document's top line (H1), complete and as written, e.g. "Amity University Online MBA program" |
+| Hero chips / glance | `ugc_status`, `naac_grade`, `mode`, `duration`, `program_duration`, `total_fee`, `best_price_value`, `emi_amount`, `num_specializations`, `program_validity` | `best_price_value` = lowest total fee. Empty values must be hidden, not shown as "N/A" ❓ (At a Glance shows "Validity N/A") |
 | About, highlights | `about_*`, `highlights*` | |
 | Accreditations | `accreditations_heading`, `accreditation_paragraph`, `course_accreditations` | |
 | Specializations | `specializations_heading`, `specializations_intro`, `specialization` | Only this program's specializations; empty when it has none |
@@ -60,7 +61,7 @@ staging.degreebaba.com. The parser's own rules live in
 
 | Section on the page | Field(s) | Content |
 |---|---|---|
-| Hero name | `spec_name` | "<program> in <specialization>", e.g. "Online MBA in Finance", "Online MSc in Applied Mathematics" |
+| Hero name | `spec_name` | The document's top line (H1), complete and as written, e.g. "Sikkim Manipal Online MBA in Finance Management" |
 | Fee & EMI | `fee_heading`, `fee_section_paragraph`, `fee_plans`, `total_fee`, `best_price_specialization`, `emi_amount`, `partner_banks_specialization` | |
 | Other specializations | `other_specs_heading`, `other_specializations_section_paragraph`, `other_specs` | The program's specializations from its fee table |
 | Syllabus | `syllabus_heading`, `syllabus_section_paragraph`, `academic_years` | |
