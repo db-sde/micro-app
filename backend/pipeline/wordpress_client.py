@@ -467,7 +467,11 @@ def _polish_for_wordpress(acf: dict[str, Any], page_type: str) -> dict[str, Any]
     emi = acf.get("emi_amount")
     if isinstance(emi, str) and emi.strip():
         m = re.search(r"\d[\d,]*(?:\.\d+)?", emi)
-        acf["emi_amount"] = f"₹ {m.group(0).rstrip(',')}" if m else None
+        # Keep a foreign currency as written (EU Global: "€ 399"); rupee
+        # amounts ("INR", "Rs.", none) become "₹".
+        foreign = re.search(r"€|\$|£|\b(?:EUR|USD|GBP|AED)\b", emi, re.I)
+        symbol = {"eur": "€", "usd": "$", "gbp": "£"}.get(foreign.group(0).lower(), foreign.group(0)) if foreign else "₹"
+        acf["emi_amount"] = f"{symbol} {m.group(0).rstrip(',')}" if m else None
 
     # 5. Eligibility note: the old derivation glued title+description and
     #    cut it with "...".
