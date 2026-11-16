@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session, defer
 load_dotenv()
 
 from db.database import Base, engine, get_db, SessionLocal
-from db.models import Upload, FieldMapping, BulkJob
+from db.models import Upload, FieldMapping, BulkJob, UploadDocument
 from catalog import service as catalog_service
 from catalog import recovery as catalog_recovery
 from catalog.routes import router as catalog_router
@@ -55,6 +55,7 @@ from pipeline.blog_pipeline import generate_blog_summary
 from pipeline.formatter import build_json_output
 from pipeline import wordpress_client
 from pipeline import cloudinary_client
+from pipeline import content_studio
 from acf.fields import get_image_field_keys, get_file_field_keys, get_field_type, NON_EXTRACTABLE_TYPES, JSON_ARRAY, ACF_FIELDS
 
 # ────────────────────────── logging ──────────────────────────
@@ -911,6 +912,7 @@ def delete_upload(upload_id: int, db: Session = Depends(get_db)):
         if isinstance(brochure_url, str):
             cloudinary_client.delete_pdf_by_url(brochure_url)
 
+    db.query(UploadDocument).filter(UploadDocument.upload_id == upload.id).delete()
     db.delete(upload)
     db.commit()
 
@@ -1265,6 +1267,45 @@ def upload_brochure(
     }
 
 
+@app.post("/send-to-content-studio/{upload_id}")
+def send_to_content_studio(upload_id: int, db: Session = Depends(get_db)):
+    """Hand the page to Content Studio: a draft in Senior Review there, with
+    the parsed fields and the original Word document. Content Studio is what
+    publishes to WordPress. Sending the same upload again returns the same
+    Content Studio draft (it never makes a copy)."""
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+    if not upload.payload:
+        raise HTTPException(status_code=400, detail="No payload available for this upload. Process the document first.")
+    try:
+        payload_data = json.loads(upload.payload)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Stored payload is corrupted JSON.")
+    page_type = upload.page_type or ""
+    document = db.query(UploadDocument).filter(UploadDocument.upload_id == upload.id).first()
+    try:
+        result = content_studio.send(upload.id, upload.filename, page_type, payload_data,
+                                     document.content if document else None)
+    except content_studio.ContentStudioError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    meta = payload_data.setdefault("_meta", {})
+    meta["content_studio"] = {"draft_id": result.get("draftId"), "sent_at": datetime.now(timezone.utc).isoformat(),
+                              "with_document": bool(document)}
+    upload.payload = json.dumps(payload_data, ensure_ascii=False)
+    upload.status = "sent_to_studio"
+    db.commit()
+    return {
+        "upload_id": upload.id,
+        "draft_id": result.get("draftId"),
+        "existed": bool(result.get("existed")),
+        "status": result.get("status"),
+        "with_document": bool(document),
+        "unmapped": result.get("unmapped") or [],
+    }
+
+
 @app.post("/publish/{upload_id}")
 def publish_to_wordpress(
     upload_id: int,
@@ -1301,6 +1342,12 @@ def publish_to_wordpress(
         raise HTTPException(
             status_code=400,
             detail=f"Publishing is only supported for university/course/specialization/blog/category pages, got {page_type!r}.",
+        )
+    if page_type in content_studio.PAGE_TYPES and os.getenv("ALLOW_WORDPRESS_PUBLISH", "") != "1":
+        # Content Studio publishes these pages now; the parser only hands them over.
+        raise HTTPException(
+            status_code=410,
+            detail="Publishing to WordPress has moved to Content Studio. Use \"Send to Content Studio\": the page goes to senior review there.",
         )
 
     if not wordpress_client.is_configured():

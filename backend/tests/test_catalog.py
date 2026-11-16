@@ -27,6 +27,8 @@ SECRET = "test-shared-secret-never-production-12345"
 def factory(tmp_path, monkeypatch):
     monkeypatch.setenv("WORDPRESS_SITE_URL", "https://degreebaba.com")
     monkeypatch.setenv("CHATBOT_SYNC_ENABLED", "1")
+    # These cover the parser's own publish path, now off by default (Content Studio publishes).
+    monkeypatch.setenv("ALLOW_WORDPRESS_PUBLISH", "1")
     monkeypatch.setenv("CHATBOT_BASE_URL", "https://chatbot.test")
     monkeypatch.setenv("CHATBOT_CATALOG_WEBHOOK_SECRET", SECRET)
     monkeypatch.setenv("CHATBOT_CATALOG_SOURCE_HOSTS", "degreebaba.com,www.degreebaba.com")

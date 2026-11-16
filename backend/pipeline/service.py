@@ -26,7 +26,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from db.models import Upload, FieldMapping
+from db.models import Upload, FieldMapping, UploadDocument
 from pipeline.docx_parser import parse_docx
 from pipeline.page_detector import detect_page_type
 from pipeline.embedder import match_headings_to_fields, initialize_field_index
@@ -481,7 +481,7 @@ def run_extraction_pipeline(
     validated_fields = [{"field_key": k, "value": v} for k, v in payload.items()]
     final_payload = build_json_output(validated_fields, filename, detected_type)
 
-    return _persist_and_respond(final_payload, mapping_records, validation, detected_type, filename, db, t0)
+    return _persist_and_respond(final_payload, mapping_records, validation, detected_type, filename, db, t0, file_bytes)
 
 
 def extraction_pipeline() -> str:
@@ -511,7 +511,7 @@ def _run_v2_pipeline(
     final_payload["_meta"]["extra_fields"] = extra_report_fields(result.page_type)
 
     validation = validate_payload(final_payload, result.page_type)
-    response = _persist_and_respond(final_payload, result.mapping_records, validation, result.page_type, filename, db, t0)
+    response = _persist_and_respond(final_payload, result.mapping_records, validation, result.page_type, filename, db, t0, file_bytes)
     response["pipeline"] = "v2"
     response["extraction"] = {k: result.meta[k] for k in ("model", "served_by", "parser", "usage", "cost_usd", "latency_ms", "notes")}
     return response
@@ -525,8 +525,9 @@ def _persist_and_respond(
     filename: str,
     db: Session,
     t0: float,
+    file_bytes: bytes | None = None,
 ) -> dict[str, Any]:
-    """Save the upload and its field mappings; build the /upload response."""
+    """Save the upload, its field mappings and its Word document; build the /upload response."""
     quality_score = validation["summary"]["quality_score"]
 
     # ── Step 7: Persist ──
@@ -543,6 +544,8 @@ def _persist_and_respond(
     for rec in mapping_records:
         fm = FieldMapping(upload_id=upload.id, **rec)
         db.add(fm)
+    if file_bytes:
+        db.add(UploadDocument(upload_id=upload.id, filename=filename, content=file_bytes))
 
     db.commit()
     db.refresh(upload)

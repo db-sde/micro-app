@@ -171,6 +171,7 @@ export function StatusBadge({ status }) {
     'confirmed':  { status: 'info',      label: 'Reviewed'   },
     'draft_published': { status: 'warning', label: 'WP draft' },
     'published':  { status: 'published', label: 'Live'       },
+    'sent_to_studio': { status: 'published', label: 'In Content Studio' },
     'draft':      { status: 'draft',     label: 'Draft'      },
     'validated':  { status: 'mapped',    label: 'Validated'  },
     'processing': { status: 'processing',label: 'Processing' },

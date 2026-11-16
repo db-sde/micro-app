@@ -6,7 +6,6 @@ import {
 } from '../components/Components';
 import { sourceColors } from '../components/flags.mjs';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
-import CatalogSync from '../components/CatalogSync';
 
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -566,239 +565,81 @@ function JsonEditorModal({ isOpen, onClose, uploadId, initialPayload, initialPag
 /* ═══════════════════════════════════════
    PUBLISH TO WORDPRESS MODAL
    ═══════════════════════════════════════ */
-// The admission fee note is typed in by the team (never filled by AI), so it
-// gets its own box instead of only the JSON editor.
-// Text the document has after its last admission step ("Note: the
-// application fee is INR 1,200 …"): offered as a suggestion, never filled in.
-function noteSuggestion(stepsHtml) {
-  if (typeof stepsHtml !== 'string') return '';
-  const close = Math.max(stepsHtml.toLowerCase().lastIndexOf('</ol>'), stepsHtml.toLowerCase().lastIndexOf('</ul>'));
-  if (close < 0) return '';
-  const div = document.createElement('div');
-  div.innerHTML = stepsHtml.slice(close + 5);
-  return (div.textContent || '').replace(/\s+/g, ' ').trim();
-}
-
-function AdmissionFeeNote({ uploadId, payload, onSaved }) {
-  const current = payload?.admission_fee_note || '';
-  const suggestion = noteSuggestion(payload?.admission_steps);
-  const [value, setValue] = useState(current);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => { setValue(current); }, [current]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/payload/${uploadId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: { ...payload, admission_fee_note: value.trim() || null } }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || `Save failed (${res.status})`);
-      }
-      onSaved(await res.json());
-      showToast('Admission fee note saved', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="card" id="admission-fee-note-card" style={{ marginBottom: 24 }}>
-      <div className="card-body">
-        <label className="input-label" htmlFor="admission-fee-note" style={{ display: 'block', marginBottom: 4 }}>
-          Admission fee note
-        </label>
-        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-          Typed in by you, not filled automatically. Shown under the admission steps. Leave empty if not needed.
-        </div>
-        <textarea
-          id="admission-fee-note"
-          className="input"
-          rows={2}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="e.g. A non-refundable application fee of INR 600 is payable while applying."
-          style={{ width: '100%', resize: 'vertical' }}
-        />
-        {suggestion && !value && (
-          <div style={{ marginTop: 8, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }} id="fee-note-suggestion">
-            From the document: “{suggestion}”{' '}
-            <button type="button" className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
-              onClick={() => setValue(suggestion)} id="btn-use-fee-note-suggestion">
-              Use this
-            </button>
-          </div>
-        )}
-        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-primary" onClick={save} disabled={saving || value === current} id="btn-save-fee-note">
-            {saving ? 'Saving…' : 'Save note'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PublishModal({ isOpen, onClose, uploadId, alreadyPublished }) {
-  const [goLive, setGoLive] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+// Hands the page to Content Studio: a draft there, straight in senior review, with the original
+// Word document attached. Content Studio is what publishes to WordPress now.
+function SendToStudioModal({ isOpen, onClose, uploadId, alreadySent, onSent }) {
+  const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
-  const [publishError, setPublishError] = useState('');
-  const [catalogSlug, setCatalogSlug] = useState('');
-  const [catalogReviewed, setCatalogReviewed] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setResult(null);
-      setPublishError('');
-      setGoLive(false);
-      setCatalogSlug('');
-      setCatalogReviewed(false);
+      setSendError('');
     }
   }, [isOpen]);
 
-  const handlePublish = async () => {
-    setPublishing(true);
-    setPublishError('');
+  const handleSend = async () => {
+    setSending(true);
+    setSendError('');
     try {
-      const res = await fetch(`${API_BASE}/publish/${uploadId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: goLive ? 'publish' : 'draft', catalog_slug: catalogSlug.trim() || null, catalog_slug_reviewed: catalogReviewed }),
-      });
+      const res = await fetch(`${API_BASE}/send-to-content-studio/${uploadId}`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail || `Publish failed (${res.status})`);
+      if (!res.ok) throw new Error(body.detail || `Sending failed (${res.status})`);
       setResult(body);
-      showToast(
-        goLive ? 'Published live on WordPress!' : 'Saved as a WordPress draft!',
-        'success'
-      );
+      onSent?.(body);
+      showToast(body.existed ? 'Already in Content Studio' : 'Sent to Content Studio for senior review', 'success');
     } catch (err) {
-      setPublishError(err.message || 'Publish failed');
+      setSendError(err.message || 'Sending failed');
     } finally {
-      setPublishing(false);
+      setSending(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Publish to WordPress">
+    <Modal isOpen={isOpen} onClose={onClose} title="Send to Content Studio">
       {!result ? (
         <>
-          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 16 }}>
-            {alreadyPublished
-              ? 'This upload was already published — publishing again updates that same WordPress post.'
-              : 'This creates a new WordPress post populated with all ACF fields from this upload, including any uploaded images.'}
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+            This creates the page in Content Studio, straight in <strong>senior review</strong>, with these fields filled
+            and the original Word document attached. The senior completes it from the document; Content Studio publishes
+            it to WordPress.
           </p>
-          <fieldset className="choice-group" style={{ border: 0, padding: 0, margin: 0 }}>
-            <legend className="sr-only">How to publish</legend>
-            <label className={`choice${!goLive ? ' is-selected' : ''}`}>
-              <input type="radio" name="publish-mode" checked={!goLive} onChange={() => setGoLive(false)} id="publish-mode-draft" />
-              <span>
-                <span className="choice-title">Save as WordPress draft</span>
-                <span className="choice-desc" style={{ display: 'block' }}>Private. Review it in WordPress before it goes public. Recommended.</span>
-              </span>
-            </label>
-            <label className={`choice${goLive ? ' is-selected' : ''}`}>
-              <input type="radio" name="publish-mode" checked={goLive} onChange={() => setGoLive(true)} id="publish-mode-live" />
-              <span>
-                <span className="choice-title">Publish live</span>
-                <span className="choice-desc" style={{ display: 'block' }}>Public immediately. Live university, course and specialization pages are also sent to the chatbot.</span>
-              </span>
-            </label>
-          </fieldset>
-          <details className="disclosure">
-            <summary>Advanced: link to an existing chatbot record</summary>
-            <div className="disclosure-body">
-              <p style={{ margin: 0 }}>Only if the chatbot already has this exact page. Leave empty to create a new chatbot record.</p>
-              <input className="form-input" aria-label="Reviewed chatbot catalog slug" placeholder="e.g. nmims" value={catalogSlug} onChange={(e) => setCatalogSlug(e.target.value)} />
-              <label className="check-label"><input type="checkbox" checked={catalogReviewed} onChange={(e) => setCatalogReviewed(e.target.checked)} /> I checked this mapping in the chatbot.</label>
-            </div>
-          </details>
-          {publishError && (
-            <div className="notice notice--error" role="alert" style={{ marginTop: 16 }}>
-              {publishError}
+          {alreadySent && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+              This upload was already sent - sending again opens the same Content Studio draft (no copy is made).
+            </p>
+          )}
+          {sendError && (
+            <div role="alert" style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--color-error-light)', color: 'var(--color-error)', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem' }}>
+              {sendError}
             </div>
           )}
-          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
-            <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-publish">
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing || (!!catalogSlug.trim() && !catalogReviewed)} id="btn-confirm-publish">
-              {publishing ? (
-                <>
-                  <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                  Publishing…
-                </>
-              ) : (
-                goLive ? 'Publish live now' : 'Save draft to WordPress'
-              )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={sending}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSend} disabled={sending} id="btn-confirm-send-studio">
+              {sending ? 'Sending… (up to a minute if Content Studio is waking up)' : 'Send to Content Studio'}
             </button>
           </div>
         </>
       ) : (
-        <>
-          <div style={{
-            padding: '12px 16px', background: '#ECFDF5', color: '#059669',
-            borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16,
-          }}>
-            ✓ {result.wp_status === 'publish' ? 'Published live' : 'Saved as draft'} on WordPress (post #{result.wp_post_id})
-          </div>
-          <CatalogSync uploadId={uploadId} initialSync={result.catalog_sync} />
-          {result.wp_warnings?.length > 0 && (
-            <div style={{
-              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
-              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
-            }}>
-              ⚠ Published, but {result.wp_warnings.length === 1 ? 'an image' : 'some images'} didn't attach — likely a transient network hiccup, safe to retry:
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {result.wp_warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </div>
+        <div id="send-studio-result">
+          <p style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 8 }}>
+            {result.existed ? 'Already in Content Studio' : 'Sent to Content Studio'}
+          </p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+            Draft <code>{result.draft_id}</code> is in senior review.
+            {result.with_document ? ' The original Word document is attached.' : ' This upload was parsed before documents were kept, so no document is attached - the senior needs the doc from Drive.'}
+          </p>
+          {result.unmapped?.length > 0 && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+              Not carried over (no field in Content Studio): {result.unmapped.join(', ')}
+            </p>
           )}
-          {result.wp_taxonomy_warnings?.length > 0 && (
-            <div style={{
-              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
-              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
-            }}>
-              ⚠ Published, but one or more taxonomy terms couldn't be determined automatically — you may want to set these manually in WordPress:
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {result.wp_taxonomy_warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </div>
-          )}
-          {result.wp_relationship_warnings?.length > 0 && (
-            <div style={{
-              padding: '10px 14px', background: '#FEF3C7', color: '#92400E',
-              borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginBottom: 16,
-            }}>
-              ⚠ Published, but one or more linked pages couldn't be matched automatically — you may want to link these manually in WordPress:
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {result.wp_relationship_warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <a href={result.wp_edit_link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ textAlign: 'center' }}>
-              Open in WordPress Editor →
-            </a>
-            {result.wp_post_url && (
-              <a href={result.wp_post_url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ textAlign: 'center' }}>
-                View Post →
-              </a>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <button className="btn btn-primary" onClick={onClose}>Done</button>
           </div>
-          <div className="modal-footer" style={{ padding: '20px 0 0', borderTop: 'none' }}>
-            <button className="btn btn-secondary" onClick={onClose} id="btn-close-publish-result">
-              Close
-            </button>
-          </div>
-        </>
+        </div>
       )}
     </Modal>
   );
@@ -916,11 +757,6 @@ export default function ValidationScreen() {
       </TopBar>
 
       <StepIndicator currentStep={4} />
-      <CatalogSync uploadId={uploadId} initialSync={data?.catalog_sync} />
-
-      {['university', 'course', 'specialization'].includes(data?.page_type) && (
-        <AdmissionFeeNote uploadId={uploadId} payload={data?.payload} onSaved={handleJsonSaved} />
-      )}
 
       {/* Score + Summary */}
       <div className="card" style={{ marginBottom: 24 }}>
@@ -1059,9 +895,9 @@ export default function ValidationScreen() {
         <button
           className="btn btn-primary"
           onClick={() => setPublishModalOpen(true)}
-          id="btn-publish-wordpress"
+          id="btn-send-content-studio"
         >
-          Publish to WordPress
+          Send to Content Studio
         </button>
       </div>
 
@@ -1075,12 +911,17 @@ export default function ValidationScreen() {
         onSaved={handleJsonSaved}
       />
 
-      {/* Publish to WordPress Modal */}
-      <PublishModal
+      {/* Hand-off to Content Studio (it publishes to WordPress) */}
+      <SendToStudioModal
         isOpen={publishModalOpen}
         onClose={() => setPublishModalOpen(false)}
         uploadId={uploadId}
-        alreadyPublished={!!data?.payload?._meta?.wp_post_id}
+        alreadySent={!!data?.payload?._meta?.content_studio?.draft_id}
+        onSent={(body) => setData((prev) => (prev ? {
+          ...prev,
+          status: 'sent_to_studio',
+          payload: { ...prev.payload, _meta: { ...(prev.payload?._meta || {}), content_studio: { draft_id: body.draft_id } } },
+        } : prev))}
       />
     </div>
   );

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    LargeBinary,
 )
 from sqlalchemy.orm import relationship
 from db.database import Base
@@ -47,6 +48,18 @@ class Upload(Base):
 
     def __repr__(self) -> str:
         return f"<Upload id={self.id} filename={self.filename!r} status={self.status}>"
+
+
+class UploadDocument(Base):
+    """The uploaded Word document, kept so it can be handed to Content Studio
+    with the parsed fields (the senior completes the page from it). Its own
+    table, so listing or opening uploads never loads the file."""
+    __tablename__ = "upload_documents"
+
+    upload_id = Column(Integer, ForeignKey("uploads.id", ondelete="CASCADE"), primary_key=True)
+    filename = Column(String(500), nullable=False)
+    content = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
 
 class FieldMapping(Base):
